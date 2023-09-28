@@ -1,0 +1,563 @@
+---
+title: "Comparing CBCL Scores Between mTBI and CTRL"
+author: "Eman Nishat"
+date: "Last Updated `r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+    number_sections: true
+---
+
+This report includes the final analyses that are included in the manuscript. This includes models comparing follow-up Child Behaviour Checklist (CBCL) scores between children with concussion (or mild traumatic brain injury, mTBI) and the comparison groups (CTRL). Each analysis compares two different sub-scales between groups: internalizing behaviour scores and externalizing behaviour scores.
+
+Four different models were set-up and selected using the Akaike Information Criterion (AIC): (1) three-way interactions between group, sex, and age; (2) two-way interaction between group and sex; (3) two-way interaction between group and age; (4) main effects. Final models were followed by sex-stratified analyses to determine any differences in males and females.
+
+```{r include=FALSE}
+## load libraries
+libraries <- c("tidyr", "dplyr", "table1", "emmeans", "ggplot2", "magrittr", "lme4", "lmerTest", "lubridate", "AICcmodavg", "ggpubr", "lmtest", "sjPlot","sjmisc","sjlabelled")
+lapply(libraries, require, character.only = TRUE)
+
+```
+
+```{r echo = FALSE}
+## Read baseline data
+cbcl_bl <- read.csv("cbclscores_baseline.csv")
+### remove columns not needed for analyses
+cbcl_bl <- cbcl_bl[,-c(1:4,6,11:42,55:91)]
+## rename variables of baseline dataset to "t1"
+names(cbcl_bl)[c(3,6:17)] <- paste("t1", names(cbcl_bl)[c(3,6:17)], sep = "_")
+
+## Read follow-up data
+cbcl_fup <- read.csv("cbclscores_followup.csv")
+### remove columns not needed for analyses
+cbcl_fup <- cbcl_fup[,-c(1:4,6,11:42,55:92)]
+## rename variables of followup dataset to "t2"
+names(cbcl_fup)[c(3,6:17)] <- paste("t2", names(cbcl_fup)[c(3,6:17)], sep = "_")
+
+## merge baseline data with follow-up
+cbcl <- merge(cbcl_bl[,c(1,3,4,6:18)], cbcl_fup[,c(1,3,4,6:18)], by = c("subjectkey", "sex", "group"))
+
+## Load dataset with imputed data for SES variables
+df_imputed <- read.csv("complete_imputed_dataset_noSibs.csv")
+
+## re-factor all variables
+### group
+df_imputed$group [df_imputed$group == 1] <- "mTBI"
+df_imputed$group [df_imputed$group == 0] <- "CTRL"
+
+### family income: 1 = Less than $5,000; 2 = $5,000 through $11,999; 3 = $12,000 through $15,999; 4 = $16,000 through $24,999; 5 = $25,000 through $34,999; 6 = $35,000 through $49,999; 7 = $50,000 through $74,999; 8 = $75,000 through $99,999; 9 = $100,000 through $199,999; 10 = $200,000 and greater
+df_imputed$comb_income [df_imputed$comb_income %in% 1:6] <- 1 #<50k
+df_imputed$comb_income [df_imputed$comb_income %in% 7:8] <- 2 #50k-99k
+df_imputed$comb_income [df_imputed$comb_income %in% 9:10] <- 3 #100k+
+df_imputed$comb_income <- sapply(df_imputed$comb_income, as.character)
+
+### race/ethnicity: 1 = Non-Hispanic White; 2 = Non-Hispanic Black; 3 = Hispanic; 4 = Asian (Asian Indian, Chinese, Fillipino, Japanese, Korean, Vietnamese, Other Asian); 5 = AIAN (American Indian/Native American, Alaska Native); 6 = NHPI (Native Hawaiian, Guamanian, Samoan, Other Pacific Islander), 8 = Other; 9 = Multiple
+df_imputed$race_eth [df_imputed$race_eth %in% 1] <- "NHW" #non-hispanic white
+df_imputed$race_eth [df_imputed$race_eth %in% 2] <- "NHB" #non-hispanic black
+df_imputed$race_eth [df_imputed$race_eth %in% 3] <- "Hispanic" 
+df_imputed$race_eth [df_imputed$race_eth %in% 4] <- "Asian" 
+df_imputed$race_eth [df_imputed$race_eth %in% 5:9] <- "Other/Multi-Racial" 
+
+### puberty: 1 = Prepubertal; 2 = Early Puberty; 3 = Mid Puberty; 4 = Late Puberty
+df_imputed$puberty [df_imputed$puberty %in% 1] <- "Prepubescence" 
+df_imputed$puberty [df_imputed$puberty %in% 2:5] <- "Pubescence" 
+
+## merge cbcl baseline and follow-up data with ses variables
+cbcl_ses <- merge(cbcl[,c(1:6,9,10,13,14,17,18,19,22,23,26,27)], df_imputed[,c(2,4,6:16)], by = c("subjectkey", "sex", "group")) #n = 5177 (196 mTBI), 
+```
+
+# Demographics Table
+
+```{r echo = FALSE}
+# cbcl_ses[,c(3,13,16)] <- sapply(cbcl_ses[,c(3,13,16)], as.character)
+cbcl_ses_table <- cbcl_ses
+cbcl_ses_table$group [cbcl_ses_table$group == "CTRL"] <- "Comparison Group"
+cbcl_ses_table$group [cbcl_ses_table$group == "mTBI"] <- "Concussion"
+cbcl_ses_table$race_eth [cbcl_ses_table$race_eth == "NHW"] <- "Non-Hispanic White"
+cbcl_ses_table$race_eth [cbcl_ses_table$race_eth == "NHB"] <- "Non-Hispanic Black"
+cbcl_ses_table$comb_income [cbcl_ses_table$comb_income == "1"] <- "<$50K"
+cbcl_ses_table$comb_income [cbcl_ses_table$comb_income == "2"] <- "$50-99K"
+cbcl_ses_table$comb_income [cbcl_ses_table$comb_income == "3"] <- "$100K+"
+cbcl_ses_table$sex [cbcl_ses_table$sex == "F"] <- "Female"
+cbcl_ses_table$sex [cbcl_ses_table$sex == "M"] <- "Male"
+
+# relabel variables
+label(cbcl_ses_table$comb_income) <- "Combined Family Income"
+label(cbcl_ses_table$group) <- "Group"
+label(cbcl_ses_table$race_eth) <- "Race/Ethnicity"
+label(cbcl_ses_table$puberty) <- "Puberty at Follow-Up"
+label(cbcl_ses_table$sex) <- "Sex"
+label(cbcl_ses_table$t1_interview_age) <- "Age at Baseline (in months)"
+label(cbcl_ses_table$t2_interview_age) <- "Age at Follow-Up (in months)"
+label(cbcl_ses_table$t1_cbcl_scr_syn_internal_r) <- "Baseline Internalizing Behaviour Raw Score"
+label(cbcl_ses_table$t1_cbcl_scr_syn_external_r) <- "Baseline Externalizing Behaviour Raw Score"
+label(cbcl_ses_table$t1_cbcl_scr_syn_totprob_r) <- "Baseline Total Problem Behaviour Raw Score"
+label(cbcl_ses_table$t2_cbcl_scr_syn_internal_r) <- "Follow-Up Internalizing Behaviour Raw Score"
+label(cbcl_ses_table$t2_cbcl_scr_syn_external_r) <- "Follow-Up Externalizing Behaviour Raw Score"
+label(cbcl_ses_table$t2_cbcl_scr_syn_totprob_r) <- "Follow-Up Total Problem Behaviour Raw Score"
+label(cbcl_ses_table$t1_cbcl_scr_syn_internal_t) <- "Baseline Internalizing Behaviour T-Score"
+label(cbcl_ses_table$t1_cbcl_scr_syn_external_t) <- "Baseline Externalizing Behaviour T-Score"
+label(cbcl_ses_table$t2_cbcl_scr_syn_internal_t) <- "Follow-Up Internalizing Behaviour T-Score"
+label(cbcl_ses_table$t2_cbcl_scr_syn_external_t) <- "Follow-Up Externalizing Behaviour T-Score"
+
+## Demographics Table
+### function to add p-values to table from https://cran.r-project.org/web/packages/table1/vignettes/table1-examples.html
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y~ g)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
+table1(~sex + t1_interview_age + t2_interview_age + puberty + comb_income + race_eth + t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_r + t1_cbcl_scr_syn_external_t + t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_r + t2_cbcl_scr_syn_external_t | group, data = cbcl_ses_table, overall = F, extra.col=list(`p-value`= pvalue))
+
+table1(~ t1_interview_age + t2_interview_age + puberty + comb_income + race_eth + t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_r + t1_cbcl_scr_syn_external_t + t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_r + t2_cbcl_scr_syn_external_t | group + sex, data = cbcl_ses_table, overall = F)
+
+cbcl_ses_table_ctrl <- cbcl_ses_table[cbcl_ses_table$group == "Comparison Group",]
+table1(~ t1_interview_age + t2_interview_age + puberty + comb_income + race_eth + t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_r + t1_cbcl_scr_syn_external_t + t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_r + t2_cbcl_scr_syn_external_t | sex, data = cbcl_ses_table_ctrl, overall = F,extra.col=list(`p-value`= pvalue))
+
+cbcl_ses_table_mtbi <- cbcl_ses_table[cbcl_ses_table$group == "Concussion",]
+table1(~ t1_interview_age + t2_interview_age + puberty + comb_income + race_eth + t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_r + t1_cbcl_scr_syn_external_t + t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_r + t2_cbcl_scr_syn_external_t | sex, data = cbcl_ses_table_mtbi, overall = F,extra.col=list(`p-value`= pvalue))
+```
+
+```{r echo = FALSE}
+# age in years
+cbcl_ses_table$t1_interview_age_yrs <- cbcl_ses_table$t1_interview_age/12
+cbcl_ses_table$t2_interview_age_yrs <- cbcl_ses_table$t2_interview_age/12
+
+table1(~sex + t1_interview_age_yrs + t2_interview_age_yrs | group, data = cbcl_ses_table, overall = F)
+```
+
+```{r echo = FALSE}
+# T-Scores - Baseline Internalizing
+cbcl_ses_table$cbcl_cutoff_bl_int [cbcl_ses_table$t1_cbcl_scr_syn_internal_t <= 64] <- "normal"
+cbcl_ses_table$cbcl_cutoff_bl_int [cbcl_ses_table$t1_cbcl_scr_syn_internal_t >= 65 & cbcl_ses_table$t1_cbcl_scr_syn_internal_t < 70] <- "borderline"
+cbcl_ses_table$cbcl_cutoff_bl_int [cbcl_ses_table$t1_cbcl_scr_syn_internal_t >= 70] <- "clinical"
+
+# T-Scores - Baseline Externalizing
+cbcl_ses_table$cbcl_cutoff_bl_ext [cbcl_ses_table$t1_cbcl_scr_syn_external_t <= 64] <- "normal"
+cbcl_ses_table$cbcl_cutoff_bl_ext [cbcl_ses_table$t1_cbcl_scr_syn_external_t >= 65 & cbcl_ses_table$t1_cbcl_scr_syn_external_t < 70] <- "borderline"
+cbcl_ses_table$cbcl_cutoff_bl_ext [cbcl_ses_table$t1_cbcl_scr_syn_external_t >= 70] <- "clinical"
+
+# T-Scores - Follow-up Internalizing
+cbcl_ses_table$cbcl_cutoff_fup_int [cbcl_ses_table$t2_cbcl_scr_syn_internal_t <= 64] <- "normal"
+cbcl_ses_table$cbcl_cutoff_fup_int [cbcl_ses_table$t2_cbcl_scr_syn_internal_t >= 65 & cbcl_ses_table$t1_cbcl_scr_syn_internal_t < 70] <- "borderline"
+cbcl_ses_table$cbcl_cutoff_fup_int [cbcl_ses_table$t2_cbcl_scr_syn_internal_t >= 70] <- "clinical"
+
+# T-Scores -  Follow-up  Externalizing
+cbcl_ses_table$cbcl_cutoff_fup_ext [cbcl_ses_table$t2_cbcl_scr_syn_external_t <= 64] <- "normal"
+cbcl_ses_table$cbcl_cutoff_fup_ext [cbcl_ses_table$t2_cbcl_scr_syn_external_t >= 65 & cbcl_ses_table$t1_cbcl_scr_syn_external_t < 70] <- "borderline"
+cbcl_ses_table$cbcl_cutoff_fup_ext [cbcl_ses_table$t2_cbcl_scr_syn_external_t >= 70] <- "clinical"
+
+label(cbcl_ses_table$cbcl_cutoff_bl_int) <- "Baseline Internalizing Behaviour T-Score"
+label(cbcl_ses_table$cbcl_cutoff_bl_ext) <- "Baseline Externalizing Behaviour T-Score"
+label(cbcl_ses_table$cbcl_cutoff_fup_int) <- "Follow-Up Internalizing Behaviour T-Score"
+label(cbcl_ses_table$cbcl_cutoff_fup_ext) <- "Follow-Up Externalizing Behaviour T-Score"
+
+table1(~cbcl_cutoff_bl_int + cbcl_cutoff_bl_ext + cbcl_cutoff_fup_int + cbcl_cutoff_fup_ext| group, data = cbcl_ses_table, overall = F)
+```
+
+```{r echo = FALSE}
+# T-Scores - Internalizing
+cbcl_ses_table$cbcl_cutoff [cbcl_ses_table$t1_cbcl_scr_syn_internal_t <= 64] <- "normal"
+cbcl_ses_table$cbcl_cutoff [cbcl_ses_table$t1_cbcl_scr_syn_internal_t >= 65 & cbcl_ses_table$t1_cbcl_scr_syn_internal_t < 70] <- "borderline"
+cbcl_ses_table$cbcl_cutoff [cbcl_ses_table$t1_cbcl_scr_syn_internal_t >= 70] <- "clinical"
+
+table1(~cbcl_cutoff | group, data = cbcl_ses_table, overall = F)
+```
+
+# Plots Showing CBCL Change Over Time
+
+## Internalizing Behaviour
+
+```{r echo = FALSE, warning=FALSE}
+cbcl_t1 <- cbcl_ses
+cbcl_t1$interview_age <- cbcl_ses$t1_interview_age
+cbcl_t1$cbcl_scr_syn_internal_r <- cbcl_ses$t1_cbcl_scr_syn_internal_r
+cbcl_t1$cbcl_scr_syn_external_r <- cbcl_ses$t1_cbcl_scr_syn_external_r
+cbcl_t1$cbcl_scr_syn_internal_t <- cbcl_ses$t1_cbcl_scr_syn_internal_t
+cbcl_t1$cbcl_scr_syn_external_t <- cbcl_ses$t1_cbcl_scr_syn_external_t
+cbcl_t1$eventname <- "baseline_year_1_arm_1"
+
+cbcl_t2 <- cbcl_ses
+cbcl_t2$interview_age <- cbcl_ses$t2_interview_age
+cbcl_t2$cbcl_scr_syn_internal_r <- cbcl_ses$t2_cbcl_scr_syn_internal_r
+cbcl_t2$cbcl_scr_syn_external_r <- cbcl_ses$t2_cbcl_scr_syn_internal_r
+cbcl_t2$cbcl_scr_syn_internal_t <- cbcl_ses$t2_cbcl_scr_syn_internal_t
+cbcl_t2$cbcl_scr_syn_external_t <- cbcl_ses$t2_cbcl_scr_syn_internal_t
+cbcl_t2$eventname <- "2_year_follow_up_y_arm_1"
+
+cbcl_long <- rbind(cbcl_t1, cbcl_t2)
+```
+
+### Raw Score
+
+```{r echo = FALSE, warning=FALSE}
+cbcl_long_mTBI <- cbcl_long[cbcl_long$group == "mTBI",]
+conc_grp_int <- ggplot(data=cbcl_long_mTBI, aes(x=interview_age, y = cbcl_scr_syn_internal_r, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Internalizing Behavior Raw Score", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+conc_grp_int
+```
+
+
+```{r echo = FALSE, warning=FALSE}
+cbcl_long_CTRL <- cbcl_long[cbcl_long$group == "CTRL",]
+comp_grp_int <- ggplot(data=cbcl_long_CTRL, aes(x=interview_age, y = cbcl_scr_syn_internal_r, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.05) + 
+  geom_point(alpha = 0.05) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Internalizing Behavior Raw Score", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+comp_grp_int
+```
+
+```{r echo = FALSE}
+int_plot <- ggarrange(conc_grp_int, comp_grp_int, ncol=1, nrow=2)
+int_plot
+# ggsave("FigureS2.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+### T-Score
+
+```{r echo = FALSE}
+conc_grp_int_tscore <- ggplot(data=cbcl_long_mTBI, aes(x=interview_age, y = cbcl_scr_syn_internal_t, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  geom_hline(yintercept = 70, col = "red") +
+  geom_hline(yintercept = 65, col = "red", linetype = "dotted") +
+  labs(y = "Internalizing Behavior T-Score", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+conc_grp_int_tscore
+```
+
+```{r echo = FALSE}
+comp_grp_int_tscore <- ggplot(data=cbcl_long_CTRL, aes(x=interview_age, y = cbcl_scr_syn_internal_t, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.05) + 
+  geom_point(alpha = 0.05) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  geom_hline(yintercept = 70, col = "red") +
+  geom_hline(yintercept = 65, col = "red", linetype = "dotted") +
+  labs(y = "Internalizing Behavior T-Score", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+comp_grp_int_tscore
+```
+
+```{r echo = FALSE}
+int_plot_tscore <- ggarrange(conc_grp_int_tscore, comp_grp_int_tscore, ncol=1, nrow=2)
+int_plot_tscore
+# ggsave("FigureS4.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+## Externalizing Behaviour
+
+### Raw Score
+
+```{r echo = FALSE, warning=FALSE}
+conc_grp_ext <- ggplot(data=cbcl_long_mTBI, aes(x=interview_age, y = cbcl_scr_syn_external_r, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Externalizing Behavior Raw Score", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+conc_grp_ext
+```
+
+```{r echo = FALSE, warning=FALSE}
+comp_grp_ext <- ggplot(data=cbcl_long_CTRL, aes(x=interview_age, y = cbcl_scr_syn_external_r, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.05) + 
+  geom_point(alpha = 0.05) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Externalizing Behavior Raw Score", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+comp_grp_ext
+```
+
+```{r echo = FALSE}
+ext_plot <- ggarrange(conc_grp_ext, comp_grp_ext, ncol=1, nrow=2)
+ext_plot
+# ggsave("FigureS3.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+### T-Score
+
+```{r echo = FALSE, warning=FALSE}
+conc_grp_ext_tscore <- ggplot(data=cbcl_long_mTBI, aes(x=interview_age, y = cbcl_scr_syn_external_t, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  geom_hline(yintercept = 70, col = "red") +
+  geom_hline(yintercept = 65, col = "red", linetype = "dotted") +
+  labs(y = "Externalizing Behavior T-Score", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+conc_grp_ext_tscore
+```
+
+```{r echo = FALSE, warning=FALSE}
+comp_grp_ext_tscore <- ggplot(data=cbcl_long_CTRL, aes(x=interview_age, y = cbcl_scr_syn_external_t, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.05) + 
+  geom_point(alpha = 0.05) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  geom_hline(yintercept = 70, col = "red") +
+  geom_hline(yintercept = 65, col = "red", linetype = "dotted") +
+  labs(y = "Externalizing Behavior T-Score", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) 
+comp_grp_ext_tscore
+```
+
+```{r echo = FALSE}
+ext_plot_tscore <- ggarrange(conc_grp_ext_tscore, comp_grp_ext_tscore, ncol=1, nrow=2)
+ext_plot_tscore
+# ggsave("FigureS5.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+-----
+
+# Comparing Post-Injury Scores - Controlling for Pre-Injury Scores + SES Variables
+
+Question: Are follow-up CBCL scores higher in children with concussion, controlling for pre-injury?
+
+Hypothesis: Children with concussion will have higher CBCL scores.
+
+```{r echo = FALSE}
+# define levels
+cbcl_ses$race_eth <- factor(cbcl_ses$race_eth, levels = c("NHW","NHB","Hispanic","Black","Asian","Other/Multi-Racial"))
+```
+
+## Internalizing Behaviour Scores
+
+```{r echo=FALSE}
+lm_post_ses <- lm(t2_cbcl_scr_syn_internal_r ~ group*sex*t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses2 <- lm(t2_cbcl_scr_syn_internal_r ~ group*sex + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses3 <- lm(t2_cbcl_scr_syn_internal_r ~ group*t2_interview_age + sex + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses4 <- lm(t2_cbcl_scr_syn_internal_r ~ group + sex + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+## AIC
+models <- list(lm_post_ses, lm_post_ses2, lm_post_ses3, lm_post_ses4) #define list of models
+mod.names <- c('3-way', 'group-sex', 'group-age', 'main-effects') #specify model names
+aictab(cand.set = models, modnames = mod.names) #calculate AIC of each model
+```
+
+```{r echo = FALSE}
+# sex interaction
+lrtest(lm_post_ses, lm_post_ses2) #p>.05 so 3-way interaction not offering more info
+lrtest(lm_post_ses2, lm_post_ses4) #p>.05 (p = .07) so 2-way interaction not offering more info
+
+# age interaction
+lrtest(lm_post_ses, lm_post_ses3) #p>.05 so 3-way interaction not offering more info
+lrtest(lm_post_ses3, lm_post_ses4) #p>.05 so 2-way interaction not offering more info
+
+## sex interaction model is best
+```
+
+```{r echo = FALSE}
+summary(lm_post_ses2)
+```
+
+```{r echo=FALSE}
+int <- ggplot(cbcl_ses, aes(x = group, y = t2_cbcl_scr_syn_internal_r, colour = group)) +
+  geom_jitter(alpha = 0.06) +
+  geom_boxplot(outlier.shape=NA) +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  labs(y = "Internalizing Behavior Scores at Follow-Up", x = "Group", colour = "Group") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), legend.position = "none",
+        axis.text=element_text(size=10), axis.title=element_text(size=11,face="bold"), strip.text = element_text(size = 12),
+        axis.title.x = element_blank()) +
+  scale_colour_manual(values = c("darkgrey", "red")) +
+  scale_x_discrete(labels = c("Comparison", "Concussion")) 
+int
+```
+
+### Main Effect of Group
+
+```{r echo=FALSE}
+summary(lm(t2_cbcl_scr_syn_internal_r ~ group + t2_interview_age + t1_cbcl_scr_syn_internal_r +  sex +  puberty + comb_income + race_eth, data = cbcl_ses))
+```
+
+### Sex-Stratified Analyses
+
+#### Females
+
+```{r echo=FALSE}
+cbcl_ses_f <- cbcl_ses[cbcl_ses$sex=="F",]
+lm_f <- lm(t2_cbcl_scr_syn_internal_r ~ group + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses_f)
+summary(lm_f)
+```
+
+```{r echo = FALSE}
+## Visualize
+cbcl_ses_f %>% 
+  ggplot(aes(group, t2_cbcl_scr_syn_internal_r, colour = group)) +
+  geom_jitter(alpha = 0.05) +
+  geom_boxplot(width = 0.5) +
+  labs(x = "Group", y = "Internalizing Behaviour Score")  +  
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), plot.title = element_text(color = "black", size=15, hjust=0.5), axis.text.x = element_text(color = "black", size = 8), axis.text.y = element_text(color = "black", size = 8), axis.title.x = element_text(color = "black", size = 13), axis.title.y = element_text(color = "black", size = 13), legend.position = "none") +
+  scale_colour_manual(values = c("darkgrey", "red")) 
+```
+
+#### Males
+
+```{r echo=FALSE}
+cbcl_ses_m <- cbcl_ses[cbcl_ses$sex=="M",]
+lm_m <- lm(t2_cbcl_scr_syn_internal_r ~ group + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = cbcl_ses_m)
+summary(lm_m)
+```
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_post_ses2,
+  lm_f,
+  lm_m,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Group",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Baseline Internalizing Behavior Score",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial",
+    "Group:Sex"
+  ),
+  dv.labels = c("Group Effects", "Sex-Stratified: Females", "Sex-Stratified: Males"),
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
+
+## Externalizing Behaviour Scores
+
+```{r echo=FALSE}
+lm_post_ses_ext <- lm(t2_cbcl_scr_syn_external_r ~ group*sex*t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses_ext2 <- lm(t2_cbcl_scr_syn_external_r ~ group*t2_interview_age + sex + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses_ext3 <- lm(t2_cbcl_scr_syn_external_r ~ group*sex + t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+lm_post_ses_ext4 <- lm(t2_cbcl_scr_syn_external_r ~ group + sex + t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = cbcl_ses)
+
+## AIC
+models <- list(lm_post_ses_ext, lm_post_ses_ext2, lm_post_ses_ext3, lm_post_ses_ext4) #define list of models
+mod.names <- c('3-way', 'group-age', 'group-sex', 'main-effects') #specify model names
+aictab(cand.set = models, modnames = mod.names) #calculate AIC of each model
+```
+
+```{r echo = FALSE}
+# sex interaction
+lrtest(lm_post_ses_ext, lm_post_ses_ext2) #p>.05 so 3-way interaction not offering more info
+lrtest(lm_post_ses_ext2, lm_post_ses_ext4) #p>.05 so 2-way interaction not offering more info
+
+# age interaction
+lrtest(lm_post_ses_ext, lm_post_ses_ext3) #p>.05 so 3-way interaction not offering more info
+lrtest(lm_post_ses_ext3, lm_post_ses_ext4) #p>.05 so 2-way interaction not offering more info
+
+## main effect model is best
+```
+
+```{r echo = FALSE}
+summary(lm_post_ses_ext4) 
+```
+
+```{r echo=FALSE}
+ext <- ggplot(cbcl, aes(x = group, y = t2_cbcl_scr_syn_internal_r, colour= group)) +
+  geom_jitter(alpha = 0.06) +
+  geom_boxplot(outlier.shape = NA) +
+  labs(y = "Externalizing Behavior Scores at Follow-Up") +
+  # facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), legend.position = "none",
+        axis.text=element_text(size=10), axis.title=element_text(size=11,face="bold"), strip.text = element_text(size = 12),
+        axis.title.x = element_blank()) +
+  scale_colour_manual(values = c("darkgrey", "red")) +
+  scale_x_discrete(labels = c("Comparison", "Concussion")) 
+ext
+```
+
+```{r echo = FALSE}
+p1 <- ggarrange(int, ext, ncol=1, nrow=2, labels = c("A", "B"))
+p1
+# ggsave("Figure1.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_post_ses_ext4,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Group",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Baseline Internalizing Behavior Score",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial"
+  ),
+  dv.labels = "",
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
