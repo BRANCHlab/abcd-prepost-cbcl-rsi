@@ -1,0 +1,817 @@
+---
+title: "Generate Concussion and Comparison Groups with Pre- and Post-Injury Info"
+author: "Eman Nishat"
+date: "Last Updated: `r Sys.Date()`"
+output: html_document
+---
+
+This script generates the concussion group with baseline and follow-up data, that experienced a concussion after study entry, and comparison group with no history of head or neck injuries.
+
+```{r, echo=FALSE, include=FALSE}
+# libraries
+libraries <- c("ggplot2", "dplyr", "tidyr", "table1", "magrittr")
+lapply(libraries, require, character.only = TRUE)
+```
+
+```{r, echo=FALSE}
+# upload head injury data from Longitudinal Parent Ohio TBI Screen
+otbi <- read.table('abcd_lpohstbi01.txt')
+```
+
+# Concussion
+
+## Head Injuries
+
+### Any Head Injuries?
+
+Determine how many participants reported a head injury between baseline and 1-year follow-up, and 1-year and 2-year follow-up. 
+
+```{r,echo=FALSE}
+# remove 3yr follow-up
+otbi_1yr_2yr <- subset(otbi, eventname != "3_year_follow_up_y_arm_1") #n = 21639
+# length(unique(otbi_1yr_2yr$subjectkey)) # n = 11453
+
+# change question asking whether child experienced injury to their head or neck from factor to numeric (tbi_1_l, tbi_2_l, tbi_3_l, tbi_4_l, tbi_5_l, tbi_6o_l, tbi_7a_l, tbi_8)
+otbi_1yr_2yr[, c(11, 15, 19, 23, 27, 31, 36, 43)] <- otbi_1yr_2yr[, c(11, 15, 19, 23, 27, 31, 36, 43)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# create yes/no head injury variable to record any head injury since last interview
+otbi_1yr_2yr <- otbi_1yr_2yr %>%
+  mutate(
+    headinj = case_when(
+      # ER
+      tbi_1_l == 1 ~ "Yes",
+      # MVC
+      tbi_2_l == 1 ~ "Yes",
+      # Fall
+      tbi_3_l == 1 ~ "Yes",
+      # Fight
+      tbi_4_l == 1 ~ "Yes",
+      # Blast
+      tbi_5_l == 1 ~ "Yes",
+      # Other injury with LOC
+      tbi_6o_l == 1 ~ "Yes",
+      # Repeated head impacts
+      tbi_7a_l == 1 ~ "Yes",
+      # Concussion
+      tbi_8 >= 1 ~ "Yes",
+      TRUE ~ "No"
+    )
+  )
+
+table1(~ headinj | sex, data = otbi_1yr_2yr, rowlabelhead = "Any Head Injuries at Follow-Ups")
+
+table1(~ headinj | sex * eventname, data = otbi_1yr_2yr, rowlabelhead = "Any Head Injuries at 1-Year & 2-Year Follow-Up")
+
+# subset those with and without head injuries into separate dfs
+otbi_1yr_2yr_inj <- subset(otbi_1yr_2yr, headinj == "Yes") # n = 1258
+otbi_1yr_2yr_noInj <- subset(otbi_1yr_2yr, headinj == "No") # n = 20381
+```
+
+### Severity of Injury: How many are concussions?
+
+Concussions (mild traumatic brain injury, mTBI) are defined as any injury with loss of consciousness (LOC) for <=30 minutes, dazed/gap in memory for <24 hours, or both LOC for <=30 minutes and memory loss <24 hours. NOTE: Ohio TBI in ABCD does not report how long memory loss was for. 
+
+```{r,echo=FALSE}
+# According to ABCD Longitudinal Summary Scores Traumatic Brain Injury:
+## Improbable TBI: no TBI or TBI w/o LOC or memory loss;
+## Possible mTBI: TBI w/o LOC but memory loss
+## mTBI: TBI w/LOC ≤ 30 min
+## Moderate TBI: TBI w/LOC  30 min - 24 hrs
+## Severe TBI: TBI w/ LOC ≥ 24 hrs
+
+# change symptom questions from factor to numeric because conditional statements won't work on factors
+otbi_1yr_2yr_inj[, c(12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 31:34, 37, 38, 43)] <- otbi_1yr_2yr_inj[, c(12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 31:34, 37, 38, 43)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+otbi_1yr_2yr_inj <- otbi_1yr_2yr_inj %>%
+  mutate(
+    injury = case_when(
+      # mTBI #
+      ## LOC
+      tbi_1b_l == 1 ~ "mTBI",
+      tbi_2b_l == 1 ~ "mTBI",
+      tbi_3b_l == 1 ~ "mTBI",
+      tbi_4b_l == 1 ~ "mTBI",
+      tbi_5b_l == 1 ~ "mTBI",
+      tbi_6o_l == 1 ~ "mTBI",
+      tbi_7c1_l == 1 ~ "mTBI",
+      ## PTA, or PTA + LOC both
+      tbi_1b_l <= 1 & tbi_1c_l == 1 ~ "mTBI",
+      tbi_2b_l <= 1 & tbi_2c_l == 1 ~ "mTBI",
+      tbi_3b_l <= 1 & tbi_3c_l == 1 ~ "mTBI",
+      tbi_4b_l <= 1 & tbi_4c_l == 1 ~ "mTBI",
+      tbi_5b_l <= 1 & tbi_5c_l == 1 ~ "mTBI",
+      ## Any other injuries with LOC <= 30
+      ### 6p is number of other injuries, 6r is number of other injuries with LOC >=30
+      ### Want those with LOC<30, so subtract the two numbers
+      (tbi_6p_l - tbi_6r_l) > 0 ~ "mTBI",
+      ## Repeated head impacts
+      tbi_7c1_l <= 1 & tbl_7c2_l == 1 ~ "mTBI",
+      ## Concussion
+      tbi_8 >= 1 ~ "mTBI",
+      # Possible mTBI #
+      ## PTA + no LOC
+      tbi_1b_l == 0 & tbi_1c_l == 1 ~ "Possible mTBI",
+      tbi_2b_l == 0 & tbi_2c_l == 1 ~ "Possible mTBI",
+      tbi_3b_l == 0 & tbi_3c_l == 1 ~ "Possible mTBI",
+      tbi_4b_l == 0 & tbi_4c_l == 1 ~ "Possible mTBI",
+      tbi_5b_l == 0 & tbi_5c_l == 1 ~ "Possible mTBI",
+      ## Repeated head impacts
+      tbi_7c1_l == 0 & tbl_7c2_l == 1 ~ "Possible mTBI",
+      # Improbable TBI #
+      ## LOC
+      tbi_1b_l == 0 & tbi_1c_l == 0 ~ "Improbable TBI",
+      tbi_2b_l == 0 & tbi_2c_l == 0 ~ "Improbable TBI",
+      tbi_3b_l == 0 & tbi_3c_l == 0 ~ "Improbable TBI",
+      tbi_4b_l == 0 & tbi_4c_l == 0 ~ "Improbable TBI",
+      tbi_5b_l == 0 & tbi_5c_l == 0 ~ "Improbable TBI",
+      ## Repeated head impacts
+      tbl_7c2_l == 0 ~ "Improbable TBI",
+      ## Concussion
+      tbi_8 == 0 ~ "Improbable TBI",
+      # Moderate TBI #
+      ## LOC
+      tbi_1b_l == 2 ~ "Moderate TBI",
+      tbi_2b_l == 2 ~ "Moderate TBI",
+      tbi_3b_l == 2 ~ "Moderate TBI",
+      tbi_4b_l == 2 ~ "Moderate TBI",
+      tbi_5b_l == 2 ~ "Moderate TBI",
+      tbi_7c1_l == 2 ~ "Moderate TBI",
+      # Severe TBI #
+      ## LOC
+      tbi_1b_l == 3 ~ "Severe TBI",
+      tbi_2b_l == 3 ~ "Severe TBI",
+      tbi_3b_l == 3 ~ "Severe TBI",
+      tbi_4b_l == 3 ~ "Severe TBI",
+      tbi_5b_l == 3 ~ "Severe TBI",
+      tbi_7c1_l == 3 ~ "Severe TBI",
+      TRUE ~ "None"
+    )
+  )
+
+table1( ~ injury | sex, data = otbi_1yr_2yr_inj, rowlabelhead = "Severity of Head Injury at Follow-Up")
+
+# subset only those with mTBI
+otbi_1yr_2yr_inj_mTBI <- subset(otbi_1yr_2yr_inj, injury == "mTBI") #n = 277
+```
+
+### Check Mechanism of Injury
+
+```{r echo=FALSE}
+# Categorizing ER visit injuries so we don't have repeat injuries 
+## Parents may have reported child's injury under question RE ER visit and also under specific mechanism of injury
+
+# save injury age variables as numeric
+otbi_1yr_2yr_inj_mTBI[, c(6, 14, 18, 22, 26, 30, 35, 39)] <- otbi_1yr_2yr_inj_mTBI[, c(6, 14, 18, 22, 26, 30, 35, 39)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# change injury age from years to months (because interview age is in months)
+otbi_1yr_2yr_inj_mTBI[, c(14, 18, 22, 26, 30, 35, 39)] <- otbi_1yr_2yr_inj_mTBI[, c(14, 18, 22, 26, 30, 35, 39)] * 12
+
+# calculate time since the injury
+otbi_1yr_2yr_inj_mTBI$time_since_1d <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_1d_l
+otbi_1yr_2yr_inj_mTBI$time_since_2d <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_2d_l
+otbi_1yr_2yr_inj_mTBI$time_since_3d <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_3d_l
+otbi_1yr_2yr_inj_mTBI$time_since_4d <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_4d_l
+otbi_1yr_2yr_inj_mTBI$time_since_5d <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_5d_l
+otbi_1yr_2yr_inj_mTBI$time_since_6s <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_6s_l # time since youngest other injury
+## one participant has 0 for tbi_7e_l -- will change to NA
+otbi_1yr_2yr_inj_mTBI$tbi_7e_l [otbi_1yr_2yr_inj_mTBI$subjectkey == "NDAR_INVZXF5C635"] <- NA
+otbi_1yr_2yr_inj_mTBI$time_since_7e <- otbi_1yr_2yr_inj_mTBI$interview_age - otbi_1yr_2yr_inj_mTBI$tbi_7e_l # age when effect of abuse/contact injury started
+
+# If time since injury for ER visit and any other injury is the same, then can assume that the ER visit was for the same injury. If not, will be labelled as unknown injury leading to ER visit
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_2d] <- 0
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_3d] <- 0
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_4d] <- 0
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_5d] <- 0
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_6s] <- 0
+otbi_1yr_2yr_inj_mTBI$tbi_1_l [otbi_1yr_2yr_inj_mTBI$time_since_1d == otbi_1yr_2yr_inj_mTBI$time_since_7e] <- 0
+
+# remove answers to follow-up Qs for ER injury since these are accounted for in other injury type Q
+otbi_1yr_2yr_inj_mTBI$time_since_1d [otbi_1yr_2yr_inj_mTBI$tbi_1_l == 0] <- NA
+otbi_1yr_2yr_inj_mTBI$tbi_1b_l [otbi_1yr_2yr_inj_mTBI$tbi_1_l == 0] <- NA
+otbi_1yr_2yr_inj_mTBI$tbi_1c_l [otbi_1yr_2yr_inj_mTBI$tbi_1_l == 0] <- NA
+otbi_1yr_2yr_inj_mTBI$tbi_1d_l [otbi_1yr_2yr_inj_mTBI$tbi_1_l == 0] <- NA
+
+# check mechanism of injury
+otbi_1yr_2yr_inj_mTBI <- otbi_1yr_2yr_inj_mTBI %>%
+  mutate(
+    injury_mech = case_when(
+      tbi_1_l == 1 ~ "ER",
+      tbi_2_l == 1 ~ "MVC",
+      tbi_3_l == 1 ~ "Fall",
+      tbi_4_l == 1 ~ "Fight",
+      tbi_5_l == 1 ~ "Blast",
+      tbi_6o_l == 1 ~ "Other LOC",
+      tbi_7a_l == 1 ~ "Repeated Head Impact",
+      tbi_8 > 0 ~ "Concussion"
+    )
+  )
+
+table1(~ injury_mech | sex, data = otbi_1yr_2yr_inj_mTBI, rowlabelhead = "Mechanism of mTBI at Follow-Up")
+
+ggplot(otbi_1yr_2yr_inj_mTBI, aes(x = injury_mech, color = sex)) +
+  geom_bar(fill = "white",
+           alpha = 0.5,
+           position = "dodge") +
+  labs(
+    title = "Mechanism of mTBI at Follow-Up",
+    y = "Number of Participants",
+    x = "Mechanism of mTBI",
+    color = "Sex"
+  )
+
+```
+
+### Duplicates 
+
+```{r, echo = FALSE}
+# Are there duplicates -- Child reporting concussion at 1 year FUP and 2 year FUP. If so, is it the same injury being reported?
+mTBI_prepost <- otbi_1yr_2yr_inj_mTBI
+mTBI_prepost_dups <- mTBI_prepost %>% 
+  group_by(subjectkey) %>% 
+  filter(n()>1) %>% 
+  arrange(subjectkey) #n = 36
+# length(unique(mTBI_prepost_dups$subjectkey)) #n = 18
+
+# create injury_age variable so age of all injuries is in one column
+mTBI_prepost_dups$injury_age <- mTBI_prepost_dups$tbi_1d_l
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_2d_l, mTBI_prepost_dups$injury_age)
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_3d_l, mTBI_prepost_dups$injury_age)
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_4d_l, mTBI_prepost_dups$injury_age)
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_5d_l, mTBI_prepost_dups$injury_age)
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_6s_l, mTBI_prepost_dups$injury_age)
+mTBI_prepost_dups$injury_age <- ifelse(is.na(mTBI_prepost_dups$injury_age), mTBI_prepost_dups$tbi_7e_l, mTBI_prepost_dups$injury_age)
+
+# if injury age and injury mechanism are the same for both injuries, then can assume that it's the same injury being reported
+true_mTBI_prepost_dups <- mTBI_prepost_dups %>% 
+  group_by(subjectkey, injury_mech, injury_age) %>% 
+  filter(n()>1) %>% 
+  arrange(subjectkey)
+# length(unique(true_mTBI_prepost_dups$subjectkey)) #n = 3 participants that reported same injury at both follow-ups
+
+# for dups, remove data from 2-year FUP because we want info from first injury
+dups_to_remove <- true_mTBI_prepost_dups %>% 
+  group_by(subjectkey, injury_mech, injury_age) %>% 
+  filter(eventname == "2_year_follow_up_y_arm_1") %>% 
+  distinct()
+
+dup_inj_removed <- mTBI_prepost_dups[!((mTBI_prepost_dups$subjectkey %in% dups_to_remove$subjectkey) & mTBI_prepost_dups$eventname == "2_year_follow_up_y_arm_1"),]
+
+mTBI_prepost <- mTBI_prepost[!((mTBI_prepost$subjectkey %in% dups_to_remove$subjectkey) & mTBI_prepost$eventname == "2_year_follow_up_y_arm_1"),] #n = 274
+
+```
+
+3 participants reported the same injury at 1-year and 2-year follow-up. 274 total participants.
+
+```{r echo = FALSE}
+# after removing duplicates, how many participants reporting injury at both 1 and 2-year FUPs?
+mTBI_prepost %>% 
+  group_by(subjectkey) %>% 
+  filter(n()>1) %>% 
+  arrange(subjectkey) %>% 
+  distinct(subjectkey) # n = 15
+
+# remove  2-year FUP injuries
+mult_inj_to_remove <- dup_inj_removed %>% 
+  group_by(subjectkey) %>% 
+  filter(eventname == "2_year_follow_up_y_arm_1") %>% 
+  distinct() #n = 15
+
+# for those with injury at both follow-ups, keep only 1 year FUP injury data
+mult_inj_removed <- mTBI_prepost[!((mTBI_prepost$subjectkey %in% mult_inj_to_remove$subjectkey) & mTBI_prepost$eventname == "2_year_follow_up_y_arm_1"),] #n = 259, 15 removed
+
+mTBI <- mult_inj_removed
+
+length(unique(mTBI$subjectkey))
+
+```
+
+15 participants reported an injury at both the 1-year and 2-year follow-up. Keeping data from the first injury only. 259 total participants.
+
+```{r echo =  FALSE}
+# want to save info on when injury was reported (1-year or 2-year follow-up) to use as dichotimized time since injury variable
+mTBI_injTime <- mTBI[, c(4,9)]
+# write.csv(mTBI_injTime, "mTBI_time_injury_reported_sept7.csv")
+
+```
+
+## CBCL
+
+```{r include=FALSE}
+mTBI_cbcl <- mTBI[,c(4,6:9,11:43,45:54)] #n=259
+```
+
+```{r echo = FALSE}
+### Baseline CBCL ###
+
+# load cbcl
+cbcl <- read.csv("abcd_cbcls01.txt")
+cbcl_bl <- cbcl[cbcl$eventname == "baseline_year_1_arm_1",]
+
+mTBI_cbcl_bl <- cbcl_bl[cbcl_bl$subjectkey %in% mTBI_cbcl$subjectkey, ] #n = 259
+
+mTBI_cbcl_bl[,10:89] <- mTBI_cbcl_bl[,10:89] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# label variables of interest 
+label(mTBI_cbcl_bl$cbcl_scr_syn_internal_r) <- "Internalizing Behaviour Raw Score"
+label(mTBI_cbcl_bl$cbcl_scr_syn_internal_t) <- "Internalizing Behaviour t-Score"
+label(mTBI_cbcl_bl$cbcl_scr_syn_external_r) <- "Externalizing Behaviour Raw Score"
+label(mTBI_cbcl_bl$cbcl_scr_syn_external_t) <- "Externalizing Behaviour t-Score"
+label(mTBI_cbcl_bl$cbcl_scr_syn_totprob_r) <- "Total Problem Behaviour Raw Score"
+label(mTBI_cbcl_bl$cbcl_scr_syn_totprob_t) <- "Total Problem Behaviour t-Score"
+
+# check for completeness for internalizing, externalizing, and total problem scores
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | sex, data = mTBI_cbcl_bl, rowlabelhead = "Baseline CBCL Scores", footnote = "A higher score reflects parent’s report of greater presence
+and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+```
+
+
+No missing CBCL at baseline.
+
+```{r echo = FALSE}
+### Two-Year Follow-Up CBCL ###
+
+# load cbcl 
+cbcl_fup <- cbcl[cbcl$eventname == "2_year_follow_up_y_arm_1",]
+
+# select mTBI participants
+mTBI_cbcl_fup <- cbcl_fup[cbcl_fup$subjectkey %in% mTBI_cbcl$subjectkey, ] # n = 253 (6 missing participants)
+
+# change symptom questions from factor to numeric
+mTBI_cbcl_fup[,10:90] <- mTBI_cbcl_fup[,10:90] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# relabel variables of interest
+label(mTBI_cbcl_fup$cbcl_scr_syn_internal_r) <- "Follow-Up Internalizing Behaviour Raw Score"
+label(mTBI_cbcl_fup$cbcl_scr_syn_internal_t) <- "Follow-Up Internalizing Behaviour t-Score"
+label(mTBI_cbcl_fup$cbcl_scr_syn_external_r) <- "Follow-Up Externalizing Behaviour Raw Score"
+label(mTBI_cbcl_fup$cbcl_scr_syn_external_t) <- "Follow-Up Externalizing Behaviour t-Score"
+label(mTBI_cbcl_fup$cbcl_scr_syn_totprob_r) <- "Follow-Up Total Problem Behaviour Raw Score"
+label(mTBI_cbcl_fup$cbcl_scr_syn_totprob_t) <- "Follow-Up Total Problem Behaviour t-Score"
+
+# check for completeness for internalizing, externalizing, and total problem scores
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | sex, data = mTBI_cbcl_fup, rowlabelhead = "Follow-Up CBCL Scores", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+# 47 participants with missing data + 6 missing participants = 53
+```
+
+53 participants with missing data at follow-up.
+
+```{r echo = FALSE}
+# select those with complete follow-up data
+mTBI_cbcl_fup_cmplt <- mTBI_cbcl_fup[complete.cases(mTBI_cbcl_fup[c(4,42,43,46,47,50,51)]),] # n = 206
+
+# select those at baseline that have complete follow-up data
+mTBI_cbcl_bl_cmplt <- mTBI_cbcl_bl[mTBI_cbcl_bl$subjectkey %in% mTBI_cbcl_fup_cmplt$subjectkey, ] # n = 206
+
+## Create datasets ##
+
+# combine mTBI baseline and followup
+mTBI_cbcl_fup_cmplt <- mTBI_cbcl_fup_cmplt[,-90] # removing extra stress variable in followup data
+cbcl_mTBI <- rbind(mTBI_cbcl_bl_cmplt, mTBI_cbcl_fup_cmplt)
+
+# relabel variables
+label(cbcl_mTBI$cbcl_scr_syn_internal_r) <- "Internalizing Behaviour Raw Score"
+label(cbcl_mTBI$cbcl_scr_syn_internal_t) <- "Internalizing Behaviour t-Score"
+label(cbcl_mTBI$cbcl_scr_syn_external_r) <- "Externalizing Behaviour Raw Score"
+label(cbcl_mTBI$cbcl_scr_syn_external_t) <- "Externalizing Behaviour t-Score"
+label(cbcl_mTBI$cbcl_scr_syn_totprob_r) <- "Total Problem Behaviour Raw Score"
+label(cbcl_mTBI$cbcl_scr_syn_totprob_t) <- "Total Problem Behaviour t-Score"
+
+cbcl_mTBI$eventname_reformated <- as.character(cbcl_mTBI$eventname)
+cbcl_mTBI$eventname_reformated [cbcl_mTBI$eventname_reformated == "2_year_follow_up_y_arm_1"] <- "Follow-Up"
+cbcl_mTBI$eventname_reformated [cbcl_mTBI$eventname_reformated == "baseline_year_1_arm_1"] <- "Baseline"
+
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | eventname_reformated*sex, data = cbcl_mTBI, overall = F, rowlabelhead = "CBCL Scores - mTBI", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+```
+
+These are mTBI participants that have CBCL data at both baseline and follow-up assessments. There are a total of 206 participants.
+
+```{r echo = FALSE}
+# Participants with missing CBCL data
+
+## select those without follow-up data
+mTBI_cbcl_fup_missing <- mTBI_cbcl_fup[!(complete.cases(mTBI_cbcl_fup[c(4,42,43,46,47,50,51)])),]
+
+## select those at baseline that don't have follow-up data
+mTBI_cbcl_bl_missing <- mTBI_cbcl_bl[mTBI_cbcl_bl$subjectkey %in% mTBI_cbcl_fup_missing$subjectkey, ]
+
+## the 6 that are missing from follow-up
+mTBI_cbcl_fup_missing_inDF <- mTBI_cbcl[!(mTBI_cbcl$subjectkey %in% mTBI_cbcl_fup$subjectkey),]
+
+## merge subjectkeys of participants with missing CBCL data
+missing_cbcl_mTBI <- merge(mTBI_cbcl_fup_missing[,c(4,8)], mTBI_cbcl_bl_missing[,c(4,8)], by = c("subjectkey", "sex"))
+missing_cbcl_mTBI <- rbind(missing_cbcl_mTBI, mTBI_cbcl_fup_missing_inDF[,c(1,4)])
+missing_cbcl_mTBI$group <- "mTBI"
+```
+
+### Injury Variables Table for Concussion Group with CBCL Data
+
+```{r echo = FALSE}
+# select participants with bl and fup cbcl data
+mtbi_inj_cbcl <- mTBI[mTBI$subjectkey %in% cbcl_mTBI$subjectkey,] #n=206
+
+# Re-Categorizing Time Since First Injury Column 
+## if one person has two injuries and thus two different "time since injury", then keep the higher value (older injury aka first injury)
+mtbi_inj_cbcl$time_since_firstinj <- apply(X = mtbi_inj_cbcl[,47:53], #columns with time since injury info
+                MARGIN = 1, #apply this function over rows
+                FUN = function(x) max(x,na.rm = TRUE) #maximum function with NA removed.
+                )
+
+table1(~time_since_firstinj| sex, data = mtbi_inj_cbcl, rowlabelhead= 'Mean Months Since First Injury', footnote = "* Time in months")
+
+# remove participants with injury age more than interview age (negative time since injury)
+mtbi_inj_cbcl <- mtbi_inj_cbcl[!(mtbi_inj_cbcl$time_since_firstinj <0),] # n = 1 removed
+
+table1(~time_since_firstinj| sex, data = mtbi_inj_cbcl, rowlabelhead= 'Mean Months Since First Injury', footnote = "* Time in months")
+```
+
+```{r echo = FALSE}
+# Remove participants whose injury occurred before baseline
+
+## get bl interview age
+cbcl_bl_age <- cbcl_bl[,c(4,7)]
+colnames(cbcl_bl_age)[2] <- "bl_interview_age"
+cbcl_bl_age$bl_interview_age <- as.numeric(as.character(cbcl_bl_age$bl_interview_age))
+
+#  convert to years since injury age info in years
+cbcl_bl_age$bl_interview_age <- round(cbcl_bl_age$bl_interview_age/12) 
+
+# injury age info in one column
+mtbi_inj_cbcl$age_at_firstinj <- apply(X = mtbi_inj_cbcl[,c(14,18,22,26,30,35,39)], #columns with age at injury info
+                MARGIN = 1, #apply this function over rows
+                FUN = function(x) max(x,na.rm = TRUE) #maximum function with NA removed.
+                )
+
+mtbi_inj_cbcl$age_at_firstinj <- mtbi_inj_cbcl$age_at_firstinj/12 #convert injury age info back to years (as it was reported originally)
+
+mtbi_inj_cbcl <- merge(cbcl_bl_age, mtbi_inj_cbcl, by = "subjectkey")
+
+# remove participants whose injury age is more than bl interview age
+mtbi_inj_cbcl <- mtbi_inj_cbcl[!(mtbi_inj_cbcl$age_at_firstinj < mtbi_inj_cbcl$bl_interview_age),] #n = 196, so 9 removed when interview age not rounded
+
+
+## convert age at injury variables back to months
+mtbi_inj_cbcl$age_at_firstinj <- mtbi_inj_cbcl$age_at_firstinj*12
+
+table1(~time_since_firstinj| sex, data = mtbi_inj_cbcl, rowlabelhead= 'Mean Months Since First Injury', footnote = "* Time in years") #9 removed
+
+# table(mtbi_inj_cbcl$eventname)
+```
+
+```{r, echo=FALSE}
+# Number of Head Injuries with LOC < 30 min (YES/NO)
+## Was he/she knocked out or did he/she lose consciousness (LOC)? If yes, how long? (tbi_1b_l, tbi_2b_l, tbi_3b_l, tbi_4b_l, tbi_5b_l, tbi_6p_l, tbi_7c1_l)
+
+# summing up the answers for each individual to quantify how many LOC they have had
+mtbi_inj_cbcl[,c(13,17,21,25,29,33,38)] <- mtbi_inj_cbcl[,c(13,17,21,25,29,33,38)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# creating new column to add number of head injuries with LOC
+mtbi_inj_cbcl$num_loc <- rowSums(mtbi_inj_cbcl[,c(13,17,21,25,29,33,38)], na.rm = TRUE)
+
+mtbi_inj_cbcl$num_loc <- as.character(as.numeric(mtbi_inj_cbcl$num_loc))
+
+# table1(~num_loc|sex, data = mTBI_prepost, rowlabelhead= 'Number of Injuries with LOC')
+
+#creating new LOC Y/N column
+mtbi_inj_cbcl$loc [mtbi_inj_cbcl$num_loc == 0] <- "No"
+mtbi_inj_cbcl$loc [mtbi_inj_cbcl$num_loc > 0] <- "Yes"
+# table1(~loc| sex, data = mtbi_inj_cbcl, rowlabelhead= 'LOC (YES/NO)')
+
+```
+
+```{r, echo=FALSE}
+# Number of Head Injuries with Memory Loss (YES/NO)
+## Was he/she dazed or did he/she have a gap in his/her memory from the injury? (tbi_1c_l, tbi_2c_l, tbi_3c_l, tbi_4c_l, tbi_5c_l, tbi_7c2_l)
+
+# summing up the answers for each individual to quantify how many head injuries they have had with memory loss
+mtbi_inj_cbcl[,c(14,18,22,26,30,39)] <- mtbi_inj_cbcl[,c(14,18,22,26,30,39)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+# creating new column to add number of head injuries with memory loss
+mtbi_inj_cbcl$num_memloss <- rowSums(mtbi_inj_cbcl[,c(14,18,22,26,30,39)], na.rm = TRUE)
+
+mtbi_inj_cbcl$num_memloss <- as.character(as.numeric(mtbi_inj_cbcl$num_memloss))
+
+# table1(~ num_memloss, data = mTBI_prepost, rowlabelhead= 'Number of Injuries with Memory Loss')
+
+# creating new memory loss Y/N column
+mtbi_inj_cbcl$memloss [mtbi_inj_cbcl$num_memloss == 0] <- "No"
+mtbi_inj_cbcl$memloss [mtbi_inj_cbcl$num_memloss >0] <- "Yes"
+# table1(~memloss | sex, data = mtbi_inj_cbcl, rowlabelhead= 'Memory Loss (YES/NO)')
+```
+
+```{r echo = FALSE}
+# relabel variables
+label(mtbi_inj_cbcl$sex) <- "Sex"
+label(mtbi_inj_cbcl$interview_age) <- "Age at Follow-Up"
+#label(mtbi_inj_cbcl$group) <- "Group"
+label(mtbi_inj_cbcl$injury_mech) <- "Mechanism of Injury"
+label(mtbi_inj_cbcl$age_at_firstinj) <- "Age at Injury (in months)"
+label(mtbi_inj_cbcl$loc) <- "Loss of Conciousness"
+label(mtbi_inj_cbcl$memloss) <- "Memory Loss"
+label(mtbi_inj_cbcl$time_since_firstinj) <- "Time Since Injury (in months)"
+
+table1(~interview_age + age_at_firstinj + injury_mech + loc + memloss + time_since_firstinj| sex, data = mtbi_inj_cbcl, overall = "Total", footnote = "*ER = Injury Resulting in Emergency Room Visit, MVC = Motor Vehicle Crash, LOC = Loss of Concsiousness")
+
+table(mtbi_inj_cbcl$eventname)
+```
+
+```{r include=FALSE}
+# write.csv(mtbi_inj_cbcl, "mTBI_CBCLgrp_injInfo_sept7.csv")
+```
+
+# CTRL
+
+## (No) Head Injuries
+
+```{r}
+# Remove all mTBI participants from baseline sample
+## remove mTBI reported prior to study entry
+bl <- read.csv("Complete_Dataset.csv") # baseline sample from paper 1
+mTBI_bl <- bl[bl$Group=="TBI", -1] # mTBI from baseline
+CTRL <- otbi[!(otbi$subjectkey %in% mTBI_bl$subjectkey), ] # n = 26859
+## remove mTBI reported after study entry
+CTRL <- CTRL[!(CTRL$subjectkey %in% mtbi_inj_cbcl$subjectkey), ] # n = 26378
+## remove anyone with head injury at follow-up
+CTRL <- CTRL[!(CTRL$subjectkey %in% otbi_1yr_2yr_inj$subjectkey), ] # n = 24237
+
+# Determine how many participants reported a head injury at baseline to exclude them from CTRL group (not just mTBI)
+
+## baseline
+ohio_bl <- subset(ohio, eventname == "baseline_year_1_arm_1")
+
+## factor to numeric 
+ohio_bl[,c(11,15,19,23,27,31,36,43)] <- ohio_bl[,c(11,15,19,23,27,31,36,43)] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+## any head injury since last interview
+ohio_bl <- ohio_bl %>% 
+  mutate(headinj = case_when(tbi_1 == 1 ~ "Yes", #ER
+                             tbi_2 == 1 ~ "Yes", #MVC
+                             tbi_3 == 1 ~ "Yes", #Fall
+                             tbi_4 == 1 ~ "Yes", #Fight
+                             tbi_5 == 1 ~ "Yes", #Blast
+                             tbi_6o == 1 ~ "Yes", #Other injury with LOC
+                             tbi_7a == 1 ~ "Yes", #Repated head impacts
+                             tbi_7g >= 1 ~ "Yes", #Repated head impacts
+                             tbi_8g >= 1 ~ "Yes", #Repated head impacts
+                             TRUE ~ "No")) 
+
+## rename sex column is titled gender
+colnames(ohio_bl)[8] <- "sex"
+table1(~headinj| sex, data = ohio_bl, rowlabelhead = "Any Head Injuries at Baseline")
+
+ohio_bl_inj <- subset(ohio_bl, headinj == "Yes")
+
+## remove anyone with head injury at baseline from ctrl group
+CTRL <- CTRL[!(CTRL$subjectkey %in% ohio_bl_inj$subjectkey), ] # n = 19896
+
+## remove anyone with 1yr or 3yr follow-up data since we're only interested in 2yr follow-up data
+CTRL_2yr <- CTRL[!(CTRL$eventname == "1_year_follow_up_y_arm_1" | CTRL$eventname == "3_year_follow_up_y_arm_1"),] # n = 7434
+
+```
+
+
+```{r echo = FALSE}
+# write.csv(CTRL_2yr, "ctrl_subjectkey_at2yrfollowup_sept7.csv")
+
+```
+
+## CBCL
+
+Check that control participants have complete CBCL data.
+
+```{r include=FALSE}
+CTRL_2yr_cbcl <- CTRL_2yr[,c(4,6:9,11:43)] # n = 7434
+```
+
+```{r echo = FALSE}
+### Baseline CBCL ###
+
+CTRL_cbcl_bl <- cbcl_bl[cbcl_bl$subjectkey %in% CTRL_2yr_cbcl$subjectkey, ] #n = 7431
+
+CTRL_cbcl_bl[,10:89] <- CTRL_cbcl_bl[,10:89] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+## label variables of interest 
+label(CTRL_cbcl_bl$cbcl_scr_syn_internal_r) <- "Internalizing Behaviour Raw Score"
+label(CTRL_cbcl_bl$cbcl_scr_syn_internal_t) <- "Internalizing Behaviour t-Score"
+label(CTRL_cbcl_bl$cbcl_scr_syn_external_r) <- "Externalizing Behaviour Raw Score"
+label(CTRL_cbcl_bl$cbcl_scr_syn_external_t) <- "Externalizing Behaviour t-Score"
+label(CTRL_cbcl_bl$cbcl_scr_syn_totprob_r) <- "Total Problem Behaviour Raw Score"
+label(CTRL_cbcl_bl$cbcl_scr_syn_totprob_t) <- "Total Problem Behaviour t-Score"
+
+## check for completeness for internalizing, externalizing, and total problem scores
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t, data = CTRL_cbcl_bl, rowlabelhead = "Baseline CBCL Scores", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+## select those with complete baseline data
+CTRL_cbcl_bl_cmplt <- CTRL_cbcl_bl[complete.cases(CTRL_cbcl_bl[c(4,42,43,46,47,50,51)]),] # n = 7428
+```
+
+6 CTRL with missing CBCL at baseline.
+
+```{r echo = FALSE}
+### Two-Year Follow-Up CBCL ###
+CTRL_cbcl_fup <- cbcl_fup[cbcl_fup$subjectkey %in% CTRL_cbcl_bl_cmplt$subjectkey, ] # n = 7428
+
+CTRL_cbcl_fup[,10:90] <- CTRL_cbcl_fup[,10:90] %>%
+  mutate_if(is.factor, as.character)  %>%
+  mutate_if(is.character, as.numeric)
+
+label(CTRL_cbcl_fup$cbcl_scr_syn_internal_r) <- "Follow-Up Internalizing Behaviour Raw Score"
+label(CTRL_cbcl_fup$cbcl_scr_syn_internal_t) <- "Follow-Up Internalizing Behaviour t-Score"
+label(CTRL_cbcl_fup$cbcl_scr_syn_external_r) <- "Follow-Up Externalizing Behaviour Raw Score"
+label(CTRL_cbcl_fup$cbcl_scr_syn_external_t) <- "Follow-Up Externalizing Behaviour t-Score"
+label(CTRL_cbcl_fup$cbcl_scr_syn_totprob_r) <- "Follow-Up Total Problem Behaviour Raw Score"
+label(CTRL_cbcl_fup$cbcl_scr_syn_totprob_t) <- "Follow-Up Total Problem Behaviour t-Score"
+
+## check for completeness for internalizing, externalizing, and total problem scores
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | sex, data = CTRL_cbcl_fup, rowlabelhead = "Follow-Up CBCL Scores", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+# 1693 with missing CBCL info at follow-up
+```
+
+1693 participants with missing data at follow-up
+
+```{r echo = FALSE}
+## select those with follow-up data
+CTRL_cbcl_fup_cmplt <- CTRL_cbcl_fup[complete.cases(CTRL_cbcl_fup[c(4,42,43,46,47,50,51)]),] # n = 5735
+
+## select those at baseline that have follow-up data
+CTRL_cbcl_bl_cmplt <- CTRL_cbcl_bl_cmplt[CTRL_cbcl_bl_cmplt$subjectkey %in% CTRL_cbcl_fup_cmplt$subjectkey, ] # n = 5735
+
+## Create datasets ##
+
+## combine mTBI baseline and followup
+CTRL_cbcl_fup_cmplt <- CTRL_cbcl_fup_cmplt[,-90] # removing extra stress variable
+cbcl_CTRL <- rbind(CTRL_cbcl_bl_cmplt, CTRL_cbcl_fup_cmplt) # n = 11470
+
+label(cbcl_CTRL$cbcl_scr_syn_internal_r) <- "Internalizing Behaviour Raw Score"
+label(cbcl_CTRL$cbcl_scr_syn_internal_t) <- "Internalizing Behaviour t-Score"
+label(cbcl_CTRL$cbcl_scr_syn_external_r) <- "Externalizing Behaviour Raw Score"
+label(cbcl_CTRL$cbcl_scr_syn_external_t) <- "Externalizing Behaviour t-Score"
+label(cbcl_CTRL$cbcl_scr_syn_totprob_r) <- "Total Problem Behaviour Raw Score"
+label(cbcl_CTRL$cbcl_scr_syn_totprob_t) <- "Total Problem Behaviour t-Score"
+
+cbcl_CTRL$eventname_reformated <- as.character(cbcl_CTRL$eventname)
+cbcl_CTRL$eventname_reformated [cbcl_CTRL$eventname_reformated == "2_year_follow_up_y_arm_1"] <- "Follow-Up"
+cbcl_CTRL$eventname_reformated [cbcl_CTRL$eventname_reformated == "baseline_year_1_arm_1"] <- "Baseline"
+
+table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | eventname_reformated*sex, data = cbcl_CTRL, overall = F, rowlabelhead = "CBCL Scores - CTRL", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
+
+```
+
+These are CTRL participants that have CBCL data at both baseline and follow-up assessments. There are a total of 5735 participants.
+
+```{r echo = FALSE}
+# Participants with missing CBCL data
+
+## select those without baseline data
+CTRL_cbcl_bl_missing <- CTRL_cbcl_bl[!(complete.cases(CTRL_cbcl_bl[c(4,42,43,46,47,50,51)])),]
+CTRL_cbcl_bl_missing <- CTRL_cbcl_bl_missing[,c(4,8)]
+
+## the 3 that are missing from baseline
+CTRL_cbcl_bl_missing_inDF <- CTRL_2yr_cbcl[!(CTRL_2yr_cbcl$subjectkey %in% CTRL_cbcl_bl$subjectkey), ]
+CTRL_cbcl_bl_missing_inDF <- CTRL_cbcl_bl_missing_inDF[,c(1,4)]
+
+## select those without follow-up data
+CTRL_cbcl_fup_missing <- CTRL_cbcl_fup[!(complete.cases(CTRL_cbcl_fup[c(4,42,43,46,47,50,51)])),]
+CTRL_cbcl_fup_missing <- CTRL_cbcl_fup_missing[,c(4,8)]
+
+## merge subjectkeys of participants with missing CBCL data
+missing_cbcl_CTRL <- rbind(CTRL_cbcl_bl_missing, CTRL_cbcl_bl_missing_inDF, CTRL_cbcl_fup_missing)
+missing_cbcl_CTRL$group <- "CTRL"
+
+## merge CTRL and mTBI participants with missing CBCL
+missing_cbcl_mTBI_CTRL <- rbind(missing_cbcl_CTRL, missing_cbcl_mTBI)
+
+## save
+# write.csv(missing_cbcl_mTBI_CTRL, "CTRL_mTBI_withoutCBCL.csv")
+
+```
+
+```{r include=FALSE}
+# write.csv(cbcl_CTRL, "CTRL_CBCLgrp_CBCLinfo.csv")
+
+```
+
+# Imaging Data {.tabset .tabset-pills}
+
+## mTBI
+
+The following code will extract mTBI participants that have imaging data that passed QC (as completed in image_qc.Rmd).
+
+```{r echo = FALSE}
+# load mTBI participants with QC data and RSI info
+qc <- read.csv('/Volumes/awheeler/lab-data/abcd/processed/eman-proj/pre-postinjury-group-analyses/revisions/mTBI_CTRL_brainscan_qcd_rsi.csv') # n = 6250
+qc <- qc[,-1]
+
+# select mTBI participants only
+mTBI_rsi <- qc[qc$group=="mTBI",] # n = 228
+mTBI_rsi <- mTBI_rsi[mTBI_rsi$subjectkey %in% mtbi_inj_cbcl$subjectkey,] # n = 228
+
+## check who has both baseline and follow-up data -- should be 2 rows for each participant because there is 1 baseline and 1 FUP scans for each participant (WM/sub-cortical GM/SWM (sub-adjacent WM) and cortical GM/GWC)
+mTBI_rsi_prepost <- mTBI_rsi %>%
+  group_by(subjectkey) %>%
+  filter(n()==2) # n = 228
+
+```
+
+```{r echo = FALSE}
+# Check to see baseline brain scans are before injury interview 
+
+# add injury age column to dataset with imaging measures
+mTBI_imaging <- merge(mTBI_rsi_prepost, mtbi_inj_cbcl[,c(1,2,57)], by = c("subjectkey")) # n = 228
+
+## convert interview age to years (rounded) since injury age is in exact years
+mTBI_imaging$interview_age <- round(mTBI_imaging$interview_age/12)
+
+## convert injury age back to years (as it was reported originally)
+mTBI_imaging$age_at_firstinj <- mTBI_imaging$age_at_firstinj/12
+
+mTBI_imaging %>% 
+  select(subjectkey, eventname, interview_age, age_at_firstinj) %>% 
+  filter(eventname == "baseline_year_1_arm_1", interview_age > age_at_firstinj)
+
+# convert ages back to months
+## convert interview age to years (rounded) since injury age is in exact years
+mTBI_imaging$interview_age <- mTBI_imaging$interview_age*12
+mTBI_imaging$age_at_firstinj <- mTBI_imaging$age_at_firstinj*12
+
+```
+
+No participants had their injury prior to their baseline brain scan.
+
+```{r echo = FALSE}
+mTBI_injInfo <- mtbi_inj_cbcl[mtbi_inj_cbcl$subjectkey %in% mTBI_imaging$subjectkey,] # n = 114
+
+```
+
+114 mTBI participants remain with true baseline and follow-up scans.
+
+### Injury Variables Table for Concussion Group with RSI Data
+
+```{r echo = FALSE}
+# relabel variables
+label(mTBI_injInfo$sex) <- "Sex"
+label(mTBI_injInfo$bl_interview_age) <- "Age at Baseline"
+label(mTBI_injInfo$interview_age) <- "Age at Follow-Up"
+#label(mtbi_inj_cbcl$group) <- "Group"
+label(mTBI_injInfo$injury_mech) <- "Mechanism of Injury"
+label(mTBI_injInfo$age_at_firstinj) <- "Age at Injury (in months)"
+label(mTBI_injInfo$loc) <- "Loss of Conciousness"
+label(mTBI_injInfo$memloss) <- "Memory Loss"
+label(mTBI_injInfo$time_since_firstinj) <- "Time Since Injury (in months)"
+
+table1(~bl_interview_age + interview_age + age_at_firstinj + injury_mech + loc + memloss + time_since_firstinj| sex, data = mTBI_injInfo, overall = "Total", footnote = "*ER = Injury Resulting in Emergency Room Visit, MVC = Motor Vehicle Crash, LOC = Loss of Concsiousness")
+```
+
+## CTRL
+
+```{r echo = FALSE}
+# select CTRL participants only
+CTRL_rsi <- qc[qc$group=="CTRL",] # n =  6048
+CTRL_rsi <- CTRL_rsi[CTRL_rsi$subjectkey %in% cbcl_CTRL$subjectkey,] # n = 6048
+
+## check who has both baseline and follow-up data -- should be 2 rows for each participant because there is 1 baseline and 1 FUP scans for each participant (WM/sub-cortical GM/SWM (sub-adjacent WM) and cortical GM/GWC)
+CTRL_rsi_prepost <- CTRL_rsi %>%
+  group_by(subjectkey) %>%
+  filter(n()==2) # n = 6048
+
+```
+
+```{r echo = FALSE}
+# relabel variables
+label(CTRL_rsi_prepost$sex) <- "Sex"
+label(CTRL_rsi_prepost$interview_age) <- "Age at Follow-Up"
+
+table1(~sex + interview_age| eventname, data = CTRL_rsi_prepost, overall = "Total")
+
+length(unique(CTRL_rsi_prepost$subjectkey))
+```
+
+```{r echo = FALSE}
+# save subjects with pre-post RSI info
+mTBI_rsi_prepost_fin <- mTBI_rsi_prepost[mTBI_rsi_prepost$subjectkey %in% mTBI_injInfo$subjectkey,]
+
+rsi_prepost <- rbind(mTBI_rsi_prepost_fin, CTRL_rsi_prepost)
+
+# write.csv(rsi_prepost, "mTBI_CTRL_MRIgrp_RSIinfo.csv")
+```
+
