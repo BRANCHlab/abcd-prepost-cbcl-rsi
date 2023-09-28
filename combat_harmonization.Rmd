@@ -1,0 +1,430 @@
+---
+title: "NeuroComBat on Change Scores of Neurite Density"
+author: "Eman Nishat"
+date: "2023-09-12"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+---
+
+```{r setup, include=FALSE}
+options(width = 1200) ## so that text in lmer output in knit html does not wrap around
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include  =  FALSE}
+libraries <- c("dplyr", "tidyr", "ggplot2", "magrittr", "neuroCombat", "lme4", "lmerTest", "AICcmodavg", "lmtest")
+lapply(libraries, require, character.only=T)
+```
+
+
+# neuroComBat on Change Scores
+
+Here I run standard ComBat on change scores of neurite density (follow-up ND - baseline ND/time since baseline).
+
+```{r echo = FALSE}
+#######
+# RSI #
+#######
+# Read in rsi data for mTBI and CTRL that passed QC 
+nd <- read.csv("mTBI_CTRL_MRIgrp_RSIinfo.csv")
+subjectList <- read.csv("mTBI_CTRL_forMRIanalysis.csv")
+nd <- nd[(nd$subjectkey %in% subjectList$subjectkey),-1]
+nd_CTRL <- nd[nd$group == "CTRL",]
+nd_mTBI <- nd[nd$group == "mTBI",]
+nd_bl <- nd[nd$eventname == "baseline_year_1_arm_1",]
+nd_fup <- nd[nd$eventname == "2_year_follow_up_y_arm_1",]
+
+## Reading in wm nd data to obtain scan interview dates
+nd_interviewdate <- read.csv("rsi1_nd.csv")
+nd_interviewdate <- nd_interviewdate[,c(2,3,6)]
+nd_long <- merge(nd, nd_interviewdate, by = c("subjectkey", "eventname"))
+
+## set interview date as date format
+nd_long$interview_date <- as.Date(nd_long$interview_date, format = "%m/%d/%Y")
+
+## create column with baseline data
+nd_long <- nd_long %>% 
+    group_by(subjectkey) %>%
+    mutate(bl_date = interview_date[eventname == "baseline_year_1_arm_1"])
+
+## create time since baseline column by subtracting baseline date from interview date
+nd_long$time_since_bl <- round(as.numeric(difftime(nd_long$interview_date, nd_long$bl_date, units = "days")/30))
+
+# features is the ROI - save as matrix for longCombat fxn
+nd_long_roi <- nd_long[,c(6:290)]
+featurenames <- colnames(nd_long_roi)
+features <- as.matrix(nd_long_roi)
+
+```
+
+```{r echo = FALSE}
+#######
+# SES #
+#######
+# Load dataset with imputed data for SES variables
+ses <- read.csv("complete_imputed_dataset_noSibs.csv")
+# Select SES variables to 'preserve' -  to make sure they are not affected by ComBat's estimation
+ses <- ses[ses$subjectkey %in% nd$subjectkey, c(2,4,6:9,11,16)]
+
+# Rename baseline and follow-up age variables from nd data
+colnames(nd_bl)[4] <- "t1_interview_age"
+colnames(nd_fup)[4] <- "t2_interview_age"
+# Add age variables to ses df
+ses <- merge(ses, nd_bl[,c(1,4)], by = "subjectkey")
+ses <- merge(ses, nd_fup[,c(1,4)], by = "subjectkey")
+
+########
+# CBCL #
+########
+# Add baseline and follow-up cbcl variables to ses dataset
+## baseline data
+cbcl_bl <- read.csv("cbclscores_baseline.csv")
+### keep cbcl measures of interest
+cbcl_bl <- cbcl_bl[,c(5,43,44,47,48)]
+### rename variables of baseline dataset to "t1"
+names(cbcl_bl)[c(2:5)] <- paste("t1", names(cbcl_bl)[c(2:5)], sep = "_")
+### merge with ses data
+ses_cbcl_bl <- merge(ses, cbcl_bl, by = "subjectkey")
+
+## follow-up data
+cbcl_fup <- read.csv("cbclscores_followup.csv")
+### remove columns not needed for analyses
+cbcl_fup <- cbcl_fup[,c(5,43,44,47,48)]
+### rename variables of followup dataset to "t2"
+names(cbcl_fup)[c(2:5)] <- paste("t2", names(cbcl_fup)[c(2:5)], sep = "_")
+### merege with ses data that includes baseline info
+ses_cbcl <- merge(ses_cbcl_bl, cbcl_fup, by = "subjectkey")
+
+## re-factor all variables
+### group
+ses_cbcl$group [ses_cbcl$group == 1] <- "mTBI"
+ses_cbcl$group [ses_cbcl$group == 0] <- "CTRL"
+
+### family income: 1 = Less than $5,000; 2 = $5,000 through $11,999; 3 = $12,000 through $15,999; 4 = $16,000 through $24,999; 5 = $25,000 through $34,999; 6 = $35,000 through $49,999; 7 = $50,000 through $74,999; 8 = $75,000 through $99,999; 9 = $100,000 through $199,999; 10 = $200,000 and greater
+ses_cbcl$comb_income [ses_cbcl$comb_income %in% 1:6] <- 1 #<50k
+ses_cbcl$comb_income [ses_cbcl$comb_income %in% 7:8] <- 2 #50k-99k
+ses_cbcl$comb_income [ses_cbcl$comb_income %in% 9:10] <- 3 #100k+
+ses_cbcl$comb_income <- sapply(ses_cbcl$comb_income, as.character)
+
+### race/ethnicity: 1 = Non-Hispanic White; 2 = Non-Hispanic Black; 3 = Hispanic; 4 = Asian (Asian Indian, Chinese, Fillipino, Japanese, Korean, Vietnamese, Other Asian); 5 = AIAN (American Indian/Native American, Alaska Native); 6 = NHPI (Native Hawaiian, Guamanian, Samoan, Other Pacific Islander), 8 = Other; 9 = Multiple
+ses_cbcl$race_eth [ses_cbcl$race_eth %in% 1] <- "NHW" #non-hispanic white
+ses_cbcl$race_eth [ses_cbcl$race_eth %in% 2] <- "NHB" #non-hispanic black
+ses_cbcl$race_eth [ses_cbcl$race_eth %in% 3] <- "Hispanic" 
+ses_cbcl$race_eth [ses_cbcl$race_eth %in% 4] <- "Asian" 
+ses_cbcl$race_eth [ses_cbcl$race_eth %in% 5:9] <- "Other/Multi-Racial" 
+
+### puberty: 1 = Prepubertal; 2 = Early Puberty; 3 = Mid Puberty; 4 = Late Puberty
+ses_cbcl$puberty [ses_cbcl$puberty %in% 1] <- "Prepubescence" 
+ses_cbcl$puberty [ses_cbcl$puberty %in% 2:5] <- "Pubescence" 
+
+# merge with scanner, ses, and cbcl info
+nd_long_ses_cbcl <- merge(nd_long, ses_cbcl[,c(1,2,4:18)], by = c("subjectkey","sex"))
+```
+
+```{r echo = FALSE}
+# select time since baseline variable
+time_since_bl <- nd_long[nd_long$eventname=="2_year_follow_up_y_arm_1", c(1,293)]
+
+# create new df with delta nd for all roi
+nd_change <- nd_fup[,c(6:290)] - nd_bl[,c(6:290)]
+## add subjectkey column
+nd_change <- cbind(nd_bl[,1], nd_change)
+colnames(nd_change)[1] <- "subjectkey"
+
+# add time since bl variable
+nd_change <- merge(nd_change, time_since_bl, by = "subjectkey")
+
+## calculate change over time
+nd_change <- nd_change %>%
+  mutate(across(c(2:286),.fns = ~./time_since_bl))
+
+# merge with ses
+nd_change_ses  <- merge(nd_change[,c(1,181,286)], ses_cbcl, by = "subjectkey")
+names(nd_change_ses)[c(2,3)]  <- paste("delta", names(nd_change_ses)[c(2,3)], sep = "_")
+```
+
+
+```{r echo = FALSE}
+#  run neuroComBat
+
+# mod - include all t1 and t2 variables
+mod_matrix <-
+  model.matrix(
+    ~ group + sex + t1_interview_age + t2_interview_age + puberty + comb_income + race_eth +
+      t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_external_r +
+      t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_t +
+      t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_external_r +
+      t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_t,
+    data = ses_cbcl
+  )
+
+# Must transpose data with only roi so that the participants are in the columns and the nd values are the rows
+nd_change_roi <- nd_change[2:286]
+colnames(nd_change_roi) <- NULL
+nd_change_mtx <- as.matrix(nd_change_roi) #first convert to a matrix, and then transpose
+nd_change_mtx_t <- t(nd_change_mtx)
+
+# R run ComBat
+nd_change_combat <- neuroCombat(dat = nd_change_mtx_t, batch = c(ses_cbcl$scanner), mod = mod_matrix)
+nd_change_combat_t <- t(nd_change_combat$dat.combat)
+nd_change_combat_df <- as.data.frame(nd_change_combat_t)
+
+# add roi column names
+colnames(nd_change_combat_df) <- colnames(nd_change)[2:286]
+# add subjectkey column
+nd_change_combat_df <- cbind(nd_change[,1], nd_change_combat_df)
+colnames(nd_change_combat_df)[1] <- "subjectkey"
+
+# Select variables of interest in neuroCombat harmonized data
+# grep("dmri_rsind_fiberat_allfibers", colnames(nd_change_combat_df))
+# grep("dmri_rsindwm_cdk_mean", colnames(nd_change_combat_df))
+nd_neuroCombat_delta <- nd_change_combat_df[,c(1,181,286)]
+## add combat to name
+names(nd_neuroCombat_delta)[c(2,3)]  <- paste("combat_delta", names(nd_neuroCombat_delta)[c(2,3)], sep = "_")
+## merge with delta df 
+nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_change_ses, by = "subjectkey")
+```
+
+```{r}
+# run combat on baseline values
+# mod - include all t1 variables
+mod_matrix_bl <-
+  model.matrix(
+    ~ group + sex + t1_interview_age + puberty + comb_income + race_eth +
+      t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_external_r +
+      t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_t,
+    data = ses_cbcl
+  )
+
+# Must transpose data with only so that the participants are in the columns and the nd values are the rows
+nd_bl_roi <- nd_bl[6:290]
+colnames(nd_bl_roi) <- NULL
+nd_bl_roi_mtx <- as.matrix(nd_bl_roi) #first convert to a matrix, and then transpose
+nd_bl_roi_mtx_t <- t(nd_bl_roi_mtx)
+
+# R run ComBat
+nd_bl_roi_combat <- neuroCombat(dat = nd_bl_roi_mtx_t, batch = c(ses_cbcl$scanner), mod = mod_matrix_bl)
+nd_bl_roi_combat_t <- t(nd_bl_roi_combat$dat.combat)
+nd_bl_roi_combat_df <- as.data.frame(nd_bl_roi_combat_t)
+
+# add roi column names
+colnames(nd_bl_roi_combat_df) <- colnames(nd_bl)[6:290]
+# add subjectkey column
+nd_bl_roi_combat_df <- cbind(nd_bl[,1], nd_bl_roi_combat_df)
+colnames(nd_bl_roi_combat_df)[1] <- "subjectkey"
+
+# Select variables of interest in neuroCombat harmonized data
+# grep("dmri_rsind_fiberat_allfibers", colnames(nd_change_combat_df))
+# grep("dmri_rsindwm_cdk_mean", colnames(nd_change_combat_df))
+nd_bl_roi_combat_df_sub <- nd_bl_roi_combat_df[,c(1,181,286)]
+## add combat_bl to name
+names(nd_bl_roi_combat_df_sub)[c(2,3)]  <- paste("combat_bl", names(nd_bl_roi_combat_df_sub)[c(2,3)], sep = "_")
+## merge with delta df 
+nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_bl_roi_combat_df_sub, by = "subjectkey")
+```
+
+
+```{r echo = FALSE}
+## add bl values of roi
+nd_bl_roi <- nd_bl[,c(1,185,290)]
+names(nd_bl_roi)[c(2,3)]  <- paste("bl", names(nd_bl_roi)[c(2,3)], sep = "_")
+nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_bl_roi, by = "subjectkey")
+## add fup values of roi
+nd_fup_roi <- nd_fup[,c(1,185,290)]
+names(nd_fup_roi)[c(2,3)]  <- paste("fup", names(nd_fup_roi)[c(2,3)], sep = "_")
+nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_fup_roi, by = "subjectkey") #final dataset with bl nd, delta nd, combat nd, and ses
+
+```
+
+```{r}
+# run combat on follow-up values
+# mod - include all t2 variables
+mod_matrix_fup <-
+  model.matrix(
+    ~ group + sex + t2_interview_age + puberty + comb_income + race_eth +
+      t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_external_r +
+      t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_t,
+    data = ses_cbcl
+  )
+
+# Must transpose data with only so that the participants are in the columns and the nd values are the rows
+nd_fup_roi <- nd_fup[6:290]
+colnames(nd_fup_roi) <- NULL
+nd_fup_roi_mtx <- as.matrix(nd_fup_roi) #first convert to a matrix, and then transpose
+nd_fup_roi_mtx_t <- t(nd_fup_roi_mtx)
+
+# R run ComBat
+nd_fup_roi_combat <- neuroCombat(dat = nd_fup_roi_mtx_t, batch = c(ses_cbcl$scanner), mod = mod_matrix_fup)
+nd_fup_roi_combat_t <- t(nd_fup_roi_combat$dat.combat)
+nd_fup_roi_combat_df <- as.data.frame(nd_fup_roi_combat_t)
+
+# add roi column names
+colnames(nd_fup_roi_combat_df) <- colnames(nd_fup)[6:290]
+# add subjectkey column
+nd_fup_roi_combat_df <- cbind(nd_fup[,1], nd_fup_roi_combat_df)
+colnames(nd_fup_roi_combat_df)[1] <- "subjectkey"
+
+# Select variables of interest in neuroCombat harmonized data
+nd_fup_roi_combat_df_sub <- nd_fup_roi_combat_df[,c(1,181,286)]
+## add combat_bl to name
+names(nd_fup_roi_combat_df_sub)[c(2,3)]  <- paste("combat_fup", names(nd_fup_roi_combat_df_sub)[c(2,3)], sep = "_")
+## merge with delta df 
+nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_fup_roi_combat_df_sub, by = "subjectkey")
+
+
+# write.csv(nd_neuroCombat_delta, "nd_neuroComBat.csv")
+```
+
+
+-----
+
+# Visualize Residuals
+
+```{r include = FALSE}
+##  function to create plot that visualizes residuals across batches after neuroComBat
+batchBoxplot_neuroCombat <- function(idvar, batchvar, feature, 
+                         formula, data,
+                         adjustBatch=FALSE, orderby='mean', 
+                         plotMeans=TRUE, colors='grey',
+                         xlabel='batch', ylabel='residuals',
+                         ylim=NULL,
+                         title='', 
+                         verbose=TRUE, ...){
+  
+  # make batch a factor if not already
+  data[,batchvar] <- droplevels(as.factor(data[,batchvar]))
+  if (verbose) cat("[batchBoxplot] found", nlevels(data[,batchvar]), 'batches\n')
+  # get feature names
+  if (is.numeric(feature)) {
+    featurename <- names(data)[feature]
+  } else {
+    featurename <- feature
+  }
+  # make color vector 
+  if (length(colors) < nlevels(data[,batchvar])){
+    colors <- rep_len(colors, length.out=nlevels(data[,batchvar]))
+  }
+  
+  ##############################
+  # fit linear mixed effect model
+  ##############################
+  if (verbose) cat(paste0('[longCombat] fitting lm model for feature ', feature, '\n'))
+  # make the lmer formula
+  if (adjustBatch==TRUE){
+    lm_formula <- as.formula(paste0(featurename, '~', formula, '+' , batchvar))
+  } else if (adjustBatch==FALSE){
+    lm_formula <- as.formula(paste0(featurename, '~', formula))
+  }
+  # fit lm model
+  lm_fit <- lm(lm_formula, data=data)
+  # save residuals and their means and variances
+  fit_residuals <- data.frame(residuals=residuals(lm_fit), batch=data[,batchvar])
+  fit_residuals_means <- aggregate(fit_residuals$residuals, by=list(fit_residuals$batch), FUN=mean)
+  fit_residuals_var <- aggregate(fit_residuals$residuals, by=list(fit_residuals$batch), FUN=var)
+  # order boxplots by mean or variance
+  if (orderby=='mean'){
+    batchorder <- with(fit_residuals, reorder(batch, residuals, mean))
+    colors <- colors[order(fit_residuals_means[,2])]
+  } else if (orderby=='var'){
+    batchorder <- with(fit_residuals, reorder(batch, residuals, var))
+    colors <- colors[order(fit_residuals_var[,2])]
+  }
+  
+  ##############################
+  # make plot
+  ##############################
+  par(mar=c(3, 5, 3, 1), ...)
+  boxplot(fit_residuals$residuals ~ batchorder, main=title, ylab='', xlab='', 
+          ylim=ylim, lty=1, col=colors, las=1, xaxt='n')
+  if (plotMeans==TRUE){
+    points(fit_residuals_means[,2][order(fit_residuals_means[,2])], pch=5, col='red', cex=0.6)
+  }
+  mtext(text=ylabel, side=2, line=3.5, cex=1.25, font=2)
+  mtext(text=xlabel, side=1, line=1.5, cex=1.25, font=2)
+  abline(h=0)
+}
+```
+
+## Deep White Matter
+
+### Before ComBat
+
+```{r echo = FALSE}
+# before comBat
+batchBoxplot_neuroCombat(idvar='subjectkey', 
+             batchvar='scanner', 
+             feature='delta_dmri_rsind_fiberat_allfibers', 
+             formula='group + sex + t2_interview_age',
+             data=nd_neuroCombat_delta,
+             colors=1:8,
+             title='Deep White Matter - Change Scores Before neuroComBat', 
+             xlabel = "Scanner", ylabel = "Residuals")
+```
+
+```{r echo = FALSE}
+# before comBat
+summary(lm(delta_dmri_rsind_fiberat_allfibers ~ group + sex + t2_interview_age + scanner, data = nd_neuroCombat_delta))
+```
+
+### After ComBat on Change Scores
+
+```{r echo = FALSE}
+# after comBat on change scores
+batchBoxplot_neuroCombat(idvar='subjectkey', 
+             batchvar='scanner', 
+             feature='combat_delta_dmri_rsind_fiberat_allfibers', 
+             formula='group + sex + t2_interview_age',
+             data=nd_neuroCombat_delta,
+             colors=1:8,
+             title='Deep White Matter - Change Scores After neuroCombat', 
+             xlabel = "Scanner", ylabel = "Residuals")
+```
+
+```{r echo = FALSE}
+# after comBat on change scores
+summary(lm(combat_delta_dmri_rsind_fiberat_allfibers ~ group + sex + t2_interview_age + scanner, data = nd_neuroCombat_delta))
+```
+
+## Superficial White Matter
+
+### Before ComBat
+
+```{r echo = FALSE}
+# before comBat
+batchBoxplot_neuroCombat(idvar='subjectkey', 
+             batchvar='scanner', 
+             feature='delta_dmri_rsindwm_cdk_mean', 
+             formula='group + sex + t2_interview_age',
+             data=nd_neuroCombat_delta,
+             colors=1:8,
+             title='Superficial White Matter - Change Scores Before neuroComBat', 
+             xlabel = "Scanner", ylabel = "Residuals")
+```
+
+```{r echo = FALSE}
+# before comBat
+summary(lm(delta_dmri_rsindwm_cdk_mean ~ group + sex + t2_interview_age + scanner, data = nd_neuroCombat_delta))
+```
+
+### After ComBat on Change Scores
+
+```{r echo = FALSE}
+# after comBat on change scores
+batchBoxplot_neuroCombat(idvar='subjectkey', 
+             batchvar='scanner', 
+             feature='combat_delta_dmri_rsindwm_cdk_mean', 
+             formula='group + sex + t2_interview_age',
+             data=nd_neuroCombat_delta,
+             colors=1:8,
+             title='Superficial White Matter - Change Scores After neuroCombat', 
+             xlabel = "Scanner", ylabel = "Residuals")
+```
+
+```{r echo = FALSE}
+# after comBat on change scores
+summary(lm(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + t2_interview_age + scanner, data = nd_neuroCombat_delta))
+```
+
