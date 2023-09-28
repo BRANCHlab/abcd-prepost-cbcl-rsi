@@ -1,0 +1,877 @@
+---
+title: "Comparing Neurite Density Measures at Follow-Up Between mTBI and CTRL"
+author: "Eman Nishat"
+date: "Last Updated `r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      collapsed: false
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+options(width = 1200) ## so that text in lmer output in knit html does not wrap around
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+## load libraries
+# install.packages(c("tidyr", "dplyr", "table1", "emmeans", "ggplot2", "lme4", "lmerTest","AICcmodavg"))
+libraries <- c("tidyr", "dplyr", "table1", "emmeans", "ggplot2", "lme4", "lmerTest","AICcmodavg", "lmtest","ggpubr","JNplots")
+lapply(libraries, require, character.only = TRUE)
+```
+
+
+```{r echo = FALSE}
+# Read in rsi data 
+nd <- read.csv("nd_neuroComBat.csv")
+nd <- nd[,-1] 
+
+### family income as character: 1 = <50k, 2 = 50k-99k, 3 = 100k+
+nd$comb_income <- sapply(nd$comb_income, as.character)
+```
+
+
+This report includes analyses comparing post-injury neurite density of deep white matter and superficial white matter between children with concussion (or mild traumatic brain injury, mTBI) and the comparison group (CTRL).
+
+For all analyses, four models were generated: three-way interactions between group/sex/age, two-way interactions between group/sex, two-way interactions between group/age, and main effects. AIC was used to select the best-fit model. Final models were followed by sex-stratified aalyses to determine any differences in males and females.
+
+Models include socioeconomic (SES) variables including household income and race/ethnicity, and puberty as fixed effects and scanner as a random effect.
+
+# Demographics Table
+
+```{r echo = FALSE}
+### function to add p-values to table from https://cran.r-project.org/web/packages/table1/vignettes/table1-examples.html
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y~ g)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+```
+
+
+```{r echo = FALSE}
+nd_dt <- nd
+
+nd_dt$group [nd_dt$group == "CTRL"] <- "Control"
+nd_dt$group [nd_dt$group == "mTBI"] <- "Concussion"
+nd_dt$race_eth [nd_dt$race_eth == "NHW"] <- "Non-Hispanic White"
+nd_dt$race_eth [nd_dt$race_eth == "NHB"] <- "Non-Hispanic Black"
+nd_dt$comb_income [nd_dt$comb_income == "1"] <- "<$50K"
+nd_dt$comb_income [nd_dt$comb_income == "2"] <- "$50-99K"
+nd_dt$comb_income [nd_dt$comb_income == "3"] <- "$100K+"
+
+# relabel variables
+label(nd_dt$sex) <- "Sex"
+label(nd_dt$comb_income) <- "Combined Family Income"
+label(nd_dt$group) <- "Group"
+label(nd_dt$race_eth) <- "Race/Ethnicity"
+label(nd_dt$puberty) <- "Puberty"
+label(nd_dt$t1_interview_age) <- "Age at Baseline  (in months)"
+label(nd_dt$t2_interview_age) <- "Age at Follow-Up  (in months)"
+label(nd_dt$t1_cbcl_scr_syn_internal_r) <- "Pre-Injury Internalizing Behaviour Raw Score"
+label(nd_dt$t1_cbcl_scr_syn_external_r) <- "Pre-Injury Externalizing Behaviour Raw Score"
+label(nd_dt$t2_cbcl_scr_syn_internal_r) <- "Post-Injury Internalizing Raw Behaviour Score"
+label(nd_dt$t2_cbcl_scr_syn_external_r) <- "Post-Injury Externalizing Raw Behaviour Score"
+label(nd_dt$t1_cbcl_scr_syn_internal_t) <- "Pre-Injury Internalizing Behaviour T-Score"
+label(nd_dt$t1_cbcl_scr_syn_external_t) <- "Pre-Injury Externalizing Behaviour T-Score"
+label(nd_dt$t2_cbcl_scr_syn_internal_t) <- "Post-Injury Internalizing Behaviour T-Score"
+label(nd_dt$t2_cbcl_scr_syn_external_t) <- "Post-Injury Externalizing Behaviour T-Score"
+
+## Demographics Table
+table1(~sex + t1_interview_age + t2_interview_age + comb_income + race_eth  + t1_cbcl_scr_syn_internal_r + t1_cbcl_scr_syn_internal_t + t1_cbcl_scr_syn_external_r + t1_cbcl_scr_syn_external_t + t2_cbcl_scr_syn_internal_r + t2_cbcl_scr_syn_internal_t + t2_cbcl_scr_syn_external_r + t2_cbcl_scr_syn_external_t | group, data = nd_dt, overall = F, extra.col=list(`p-value`= pvalue))
+```
+
+# Injury Mechanism Table for Concussion Group
+
+```{r echo = FALSE}
+inj_info <- read.csv("mTBI_CBCLgrp_injInfo.csv")
+inj_info <- inj_info[,-1]
+nd_dt_mTBI <-  nd_dt[nd_dt$group=="Concussion",]
+
+nd_inj_info <- merge(nd_dt_mTBI, inj_info[,c(1,55:61)], by  = "subjectkey") #n = 85
+
+# relabel variables
+label(nd_inj_info$sex) <- "Sex"
+label(nd_inj_info$comb_income) <- "Combined Family Income"
+label(nd_inj_info$group) <- "Group"
+label(nd_inj_info$race_eth) <- "Race/Ethnicity"
+label(nd_inj_info$puberty) <- "Puberty"
+label(nd_inj_info$t1_interview_age) <- "Age at Baseline  (in months)"
+label(nd_inj_info$t2_interview_age) <- "Age at Follow-Up  (in months)"
+label(nd_inj_info$injury_mech) <- "Mechanism of Injury"
+label(nd_inj_info$age_at_firstinj) <- "Age at Injury (in months)"
+label(nd_inj_info$loc) <- "Loss of Conciousness"
+label(nd_inj_info$memloss) <- "Memory Loss"
+label(nd_inj_info$time_since_firstinj) <- "Time Since Injury (in months)"
+
+table1(~t1_interview_age + t2_interview_age + puberty + comb_income + race_eth + age_at_firstinj + injury_mech + loc + memloss + time_since_firstinj | sex, data = nd_inj_info, overall = "Total")
+
+```
+
+# Scanner Table
+
+```{r echo = FALSE}
+table1(~scanner | group, data = nd_dt, overall = "Total")
+```
+
+```{r echo = FALSE}
+# define levels
+nd$race_eth <- factor(nd$race_eth, levels = c("NHW","NHB","Hispanic","Black","Asian","Other/Multi-Racial"))
+# nd$group <- factor(nd$group, levels = c("CTRL", "mTBI"))
+```
+
+-----
+
+# Comparing Change in Neurite Density Over Time Between Groups 
+
+The models below are investigating differences in change in neurite density over time (delta of post- and pre-injury neurite density over time since baseline) between children with and without concussion. 
+
+```{r echo = FALSE}
+label(nd$combat_delta_dmri_rsind_fiberat_allfibers) <- "Deep White Matter"
+label(nd$combat_delta_dmri_rsindwm_cdk_mean) <- "Superficial White Matter"
+
+table1(~combat_delta_dmri_rsind_fiberat_allfibers + combat_delta_dmri_rsindwm_cdk_mean| group, data = nd, rowlabelhead = "Change in Neurite Density Over Two Years", overall = F, extra.col=list(`p-value`= pvalue))
+```
+
+## Deep White Matter
+
+### Plot individual participants
+
+```{r echo = FALSE, warning=FALSE}
+nd_mTBI <- nd[nd$group=="mTBI",]
+
+# create long form data
+## baseline
+nd_mTBI_bl <- nd_mTBI[,c(1,6:12,13,15:18,23,24)]
+nd_mTBI_bl$eventname <- "baseline_year_1_arm_1"
+### remove bl specific prefixes
+colnames(nd_mTBI_bl)[9:13] <-  sub("t1_", "", colnames(nd_mTBI_bl)[9:13])
+colnames(nd_mTBI_bl)[14:15] <-  sub("combat_bl_", "", colnames(nd_mTBI_bl)[14:15])
+## follow-up
+nd_mTBI_fup <- nd_mTBI[,c(1,6:12,14,19:22,29,30)]
+nd_mTBI_fup$eventname <- "2_year_follow_up_y_arm_1"
+### remove bl specific prefixes
+colnames(nd_mTBI_fup)[9:13] <-  sub("t2_", "", colnames(nd_mTBI_fup)[9:13])
+colnames(nd_mTBI_fup)[14:15] <-  sub("combat_fup_", "", colnames(nd_mTBI_fup)[14:15])
+## combine baseline and follow-up
+nd_mTBI_long <- rbind(nd_mTBI_bl, nd_mTBI_fup)
+
+conc_grp <- ggplot(data=nd_mTBI_long, aes(x=interview_age, y = dmri_rsind_fiberat_allfibers, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method="lm", aes(group = 1)) +
+  labs(y = "Deep White Matter Neurite Density", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) +
+  ylim(0.50, 0.70)
+conc_grp
+```
+
+```{r echo = FALSE, warning=FALSE}
+nd_CTRL <- nd[nd$group=="CTRL",]
+
+# create long form data
+## baseline
+nd_CTRL_bl <- nd_CTRL[,c(1,6:12,13,15:18,23,24)]
+nd_CTRL_bl$eventname <- "baseline_year_1_arm_1"
+### remove bl specific prefixes
+colnames(nd_CTRL_bl)[9:13] <-  sub("t1_", "", colnames(nd_CTRL_bl)[9:13])
+colnames(nd_CTRL_bl)[14:15] <-  sub("combat_bl_", "", colnames(nd_CTRL_bl)[14:15])
+## follow-up
+nd_CTRL_fup <- nd_CTRL[,c(1,6:12,14,19:22,29,30)]
+nd_CTRL_fup$eventname <- "2_year_follow_up_y_arm_1"
+### remove bl specific prefixes
+colnames(nd_CTRL_fup)[9:13] <-  sub("t2_", "", colnames(nd_CTRL_fup)[9:13])
+colnames(nd_CTRL_fup)[14:15] <-  sub("combat_fup_", "", colnames(nd_CTRL_fup)[14:15])
+## combine  baseline and follow-up
+nd_CTRL_long <- rbind(nd_CTRL_bl, nd_CTRL_fup)
+
+comp_grp <- ggplot(data=nd_CTRL_long, aes(x=interview_age, y = dmri_rsind_fiberat_allfibers, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.02) + 
+  geom_point(alpha = 0.02) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Deep White Matter Neurite Density", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) +
+  ylim(0.50, 0.70) +
+  xlim(110, 160)
+comp_grp
+```
+
+```{r include = FALSE,  warning=FALSE}
+p1 <- ggarrange(conc_grp, comp_grp, ncol=1, nrow=2)
+p1
+# ggsave("FigureS6.tiff", width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+### Group Comparison
+
+**AIC**
+
+```{r echo = FALSE}
+lm_dwm <- lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ group*t2_interview_age*sex + puberty + comb_income + race_eth + combat_bl_dmri_rsind_fiberat_allfibers + (1|scanner), data = nd, REML=FALSE)
+
+lm_dwm2 <- lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ group*sex + t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsind_fiberat_allfibers + (1|scanner), data = nd, REML=FALSE)
+
+lm_dwm3 <- lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ group*t2_interview_age + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsind_fiberat_allfibers + (1|scanner), data = nd, REML=FALSE)
+
+lm_dwm4 <- lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ group + sex + t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsind_fiberat_allfibers + (1|scanner), data = nd, REML=FALSE)
+
+# AIC
+models <- list(lm_dwm, lm_dwm2, lm_dwm3, lm_dwm4) #define list of models
+mod.names <- c('3-way-interactions','group-by-sex-interaction','group-by-age-interaction','main-effects') #specify model names
+aictab(cand.set = models, modnames = mod.names) #calculate AIC of each model
+
+```
+
+**Likelihood Ratio Test**
+
+```{r echo = FALSE}
+# age interaction
+lrtest(lm_dwm, lm_dwm2)
+lrtest(lm_dwm2, lm_dwm4)
+
+# sex interaction
+lrtest(lm_dwm, lm_dwm3)
+lrtest(lm_dwm3, lm_dwm4)
+
+# main effect model best
+```
+
+```{r echo = FALSE}
+summary(lm_dwm4)
+```
+
+```{r echo = FALSE}
+# without baseline variable
+summary(lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ group + sex + t2_interview_age + puberty + comb_income + race_eth + (1|scanner), data = nd, REML=FALSE))
+```
+
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_dwm4,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Group",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial",
+    "Baseline Deep White Matter Neurite Density"
+  ),
+  dv.labels = "",
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
+
+## Superficial White Matter
+
+### Plot individual participants
+
+```{r echo = FALSE, warning=FALSE}
+conc_grp_swm <- ggplot(data=nd_mTBI_long, aes(x=interview_age, y = dmri_rsindwm_cdk_mean, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.15) + 
+  geom_point(alpha = 0.15) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Superficial White Matter Neurite Density", x = "Age (in months)", colour = "Sex", title = "A. Concussion Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) +
+  ylim(0.30, 0.45) 
+conc_grp_swm
+```
+
+```{r echo = FALSE, warning=FALSE}
+comp_grp_swm <- ggplot(data=nd_CTRL_long, aes(x=interview_age, y = dmri_rsindwm_cdk_mean, group=subjectkey, colour = sex)) +
+  geom_line(alpha = 0.02) + 
+  geom_point(alpha = 0.02) + 
+  stat_smooth(method = "lm", aes(group = 1)) +
+  labs(y = "Superficial White Matter Neurite Density", x = "Age (in months)", colour = "Sex", title = "B. Comparison Group") +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=10), axis.title=element_text(size=12,face="bold"), strip.text = element_text(size = 12), plot.title = element_text(face="bold")) +
+  scale_colour_manual(values = c("#C77CFF", "#619CFF")) +
+  ylim(0.30, 0.45) +
+  xlim(110, 160)
+comp_grp_swm
+```
+
+```{r echo = FALSE}
+p2 <- ggarrange(conc_grp_swm, comp_grp_swm, ncol=1, nrow=2)
+p2
+# ggsave("FigureS7.tiff", plot = p2, width = 140, height = 200, units = "mm", device='tiff', dpi=500)
+```
+
+### Group Comparison
+
+**AIC**
+
+```{r echo = FALSE}
+lm_swm <- lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*t2_interview_age*sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd, REML=FALSE)
+
+lm_swm2 <- lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*sex + t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd, REML=FALSE)
+
+lm_swm3 <- lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*t2_interview_age + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd, REML=FALSE)
+
+lm_swm4 <- lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd, REML=FALSE)
+
+# AIC
+models <- list(lm_swm, lm_swm2, lm_swm3, lm_swm4)
+mod.names <- c('3-way-interactions','group-by-sex-interaction','group-by-age-interaction','main-effects')
+aictab(cand.set = models, modnames = mod.names)
+```
+**Likelihood Ratio Test**
+
+```{r echo = FALSE}
+# sex interaction
+lrtest(lm_swm, lm_swm2)
+lrtest(lm_swm2, lm_swm4)
+
+# age interaction
+lrtest(lm_swm, lm_swm3)
+lrtest(lm_swm3, lm_swm4)
+
+# age interaction model is best
+```
+
+```{r echo = FALSE}
+summary(lm_swm3)
+```
+
+
+```{r echo = FALSE}
+# without baseline variable
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*t2_interview_age + sex + puberty + comb_income + race_eth + (1|scanner), data = nd, REML=FALSE))
+```
+
+```{r echo=FALSE}
+ggplot(nd, aes(x = t2_interview_age, y = combat_delta_dmri_rsindwm_cdk_mean, colour= group)) +
+  geom_jitter(alpha = 0.3) +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=group), show.legend = FALSE) +
+  labs(y = "Change in Superficial White Matter Neurite Density ", x = "Age at Follow-Up", colour = "Group") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(values = c("darkgrey", "red"), labels = c("Comparison", "Concussion")) +
+  scale_fill_manual(values = c("darkgrey", "red"), labels = c("Comparison", "Concussion")) 
+
+# just residuals for paper
+fig2 <- ggplot(nd, aes(x = t2_interview_age, y = combat_delta_dmri_rsindwm_cdk_mean, colour= group)) +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=group)) +
+  labs(y = "Change in Superficial White Matter Neurite Density ", x = "Age at Follow-Up", colour = "Group", fill = "Group") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(values = c("darkgrey", "red"), labels = c("Comparison", "Concussion")) +
+  scale_fill_manual(values = c("darkgrey", "red"), labels = c("Comparison", "Concussion"), guide="none") 
+
+fig2
+
+# ggsave("Figure2.tiff", width= 210, height= 120, units = "mm", device='tiff', dpi=500)
+```
+
+### Johnson-Neyman Plot
+
+```{r echo = FALSE}
+jnt_cat(X = 't2_interview_age', Y = 'combat_delta_dmri_rsindwm_cdk_mean', m = 'group', data  = nd, cols = c("darkgrey", "red"), line.col = c("darkgrey", "red"), lty = c(1,1), ylab = "Change in Superficial White Matter Neurite Density ", xlab = "Age at Follow-Up", lwd  = c(2,2))[[4]]
+```
+
+Grey shaded area represents the non-significance area calculated with the Johnson-Neyman technique (source: https://www.biorxiv.org/content/10.1101/2023.05.05.539633v1.full). There are significant group differences in change in superficial white matter neurite density in participants that are lesss than ~137 months and more than ~154 months.
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_swm3,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Group",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial",
+    "Baseline Superficial White Matter Neurite Density",
+    "Group:Interview Age at Follow-Up"
+  ),
+  dv.labels = "",
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
+
+### Age-Stratified Analysis
+
+#### <= 144
+
+```{r echo = FALSE}
+# median(nd$t2_interview_age)
+nd$age_dichotimized [nd$t2_interview_age <= 143] <- "<= 143"
+nd$age_dichotimized [nd$t2_interview_age > 143] <- "> 143"
+
+nd_young <- nd[nd$age_dichotimized  == "<= 143",]
+
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_young))
+
+```
+
+#### > 144
+
+```{r echo = FALSE}
+nd_old <- nd[nd$age_dichotimized  =="> 143",]
+
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_old))
+```
+
+### Age Quartiles
+
+For the analyses below, interview age at follow-up was categorized into quartiles. Then, group comparisons were performed in the first (youngest age group) and third quartile (oldest age group). 
+
+```{r echo = FALSE}
+# Calculate quartiles for age
+nd$followup_age_quartile <- cut(nd$t2_interview_age, quantile(nd$t2_interview_age), include.lowest=TRUE, labels=FALSE)
+nd_q1 <- nd[nd$followup_age_quartile == 1,] #n=740 (19 mTBI)
+nd_q4 <- nd[nd$followup_age_quartile == 4,] #n=640 (26 mTBI)
+
+# Categorize quartile variable as factor
+nd$followup_age_quartile <- as.character(as.numeric(nd$followup_age_quartile))
+```
+
+#### Quartile 1 (youngest)
+
+```{r echo = FALSE}
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_q1, REML=FALSE))
+```
+
+#### Quartile 4 (oldest)
+
+```{r echo = FALSE}
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_q4, REML=FALSE))
+```
+
+### Age in Thirds
+
+For the analyses below, interview age at follow-up was categorized into thirds Then, group comparisons were performed in the first (youngest age group) and third group (oldest age group). 
+
+```{r echo = FALSE}
+# Calculate thirds for age
+nd$followup_age_thirds <- cut_number(nd$t2_interview_age, 3, labels=FALSE)
+nd_thirds_1 <- nd[nd$followup_age_thirds == 1,] #n=939 (27 mTBI)
+nd_thirds_3 <- nd[nd$followup_age_thirds == 3,] #n=838 (34 mTBI)
+
+# Categorize quartile variable as factor
+nd$followup_age_thirds <- as.character(as.numeric(nd$followup_age_thirds))
+```
+
+#### Thirds: 1 (youngest)
+
+```{r echo = FALSE}
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_thirds_1, REML=FALSE))
+```
+
+#### Thirds: 3 (oldest)
+
+```{r echo = FALSE}
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group + sex + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_thirds_3, REML=FALSE))
+```
+
+### Sex-Stratified Analysis
+
+#### Females
+
+```{r echo = FALSE}
+nd_f <- nd[nd$sex=="F",]
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_f))
+
+```
+
+#### Males
+
+```{r echo = FALSE}
+nd_m <- nd[nd$sex=="M",]
+summary(lmer(combat_delta_dmri_rsindwm_cdk_mean ~ group*t2_interview_age + puberty + comb_income + race_eth + combat_bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_m))
+```
+
+-----
+
+# Investigating Effect of Injury Variables on Change in Neurite Density in Concussion Group
+
+The models below are investigating change in neurite density over time in the concussion group, while controlling for injury variables including time since injury, mechanism of injury, age at injury, loss of consciousness (y/n), and memory loss (y/n).
+
+```{r echo = FALSE}
+# change time since injury to dichotimized variable (injury reported at 1 year follow-up or 2-year)
+time <- read.csv("mTBI_time_injury_reported.csv")
+time <- time[,-1]
+colnames(time)[2] <- "time_since_injury_dichot"
+nd_inj_info <- merge(nd_inj_info, time, by = "subjectkey")
+```
+
+
+## Deep White Matter 
+
+```{r echo = FALSE}
+m1  <- lmer(combat_delta_dmri_rsind_fiberat_allfibers ~ t2_interview_age + sex + age_at_firstinj + injury_mech + time_since_injury_dichot + loc + memloss + combat_bl_dmri_rsind_fiberat_allfibers + (1|scanner), data = nd_inj_info)
+summary(m1)
+```
+
+
+## Superficial White Matter 
+
+```{r echo = FALSE}
+m2 <- lmer(combat_delta_dmri_rsindwm_cdk_mean ~ t2_interview_age + sex + age_at_firstinj + injury_mech + time_since_injury_dichot + loc + memloss + bl_dmri_rsindwm_cdk_mean + (1|scanner), data = nd_inj_info)
+summary(m2)
+
+```
+
+
+```{r  include = FALSE}
+## table
+
+# install.packages(c("sjPlot", "sjmisc","sjlabelled"))
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+
+tab_model(
+  m1,
+  m2,
+  show.ci = FALSE,
+  rm.terms = c("t2_interview_age", "sex [M]", "bl_dmri_rsindwm_cdk_mean"),
+  pred.labels = c(
+    "Age at Injury (in months)",
+    "Mechanism of Injury - Fall",
+    "Mechanism of Injury - Fight",
+    "Mechanism of Injury - MVC",
+    "Mechanism of Injury - Other LOC",
+    "Mechanism of Injury - Repeated Head Impact",
+    "Time Since Injury",
+    "Loss of Consciousness (LOC)",
+    "Dazed/Memory Loss"
+  ),
+  dv.labels = c("Deep White Matter", "Superficial White Matter"),
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
+
+# Deviation Analysis with Z-Scores
+
+Below I calculate the neurite density of the concussion group in comparison to the control group by using z-scores to analyze _deviations_ of white matter maturation from the expected trajectory.
+
+The z-score is a measure that shows how much away (below or above) of the mean is a specific value (individual) in a given dataset. The mean and standard deviation of the control group will be calculated and this will be used to calculate the z-scores of the control group and the concussion group to determine their _deviation_ from the control sample. Z-scores are calculated for change in deep and superficial white matter neurite density.
+
+```{r echo=FALSE}
+# Calculate z-scores for change in dwm and swm ND in CTRL
+
+## CTRL
+### dwm
+nd_CTRL <- nd[nd$group=="CTRL",]
+nd_CTRL_dwm_mean <- mean(nd_CTRL$combat_delta_dmri_rsind_fiberat_allfibers) #ctrl dwm mean
+nd_CTRL_dwm_sd <- sd(nd_CTRL$combat_delta_dmri_rsind_fiberat_allfibers) #ctrl dwm sd
+
+nd_CTRL <- nd_CTRL %>% 
+  mutate(dwm_zscore = (combat_delta_dmri_rsind_fiberat_allfibers - mean(combat_delta_dmri_rsind_fiberat_allfibers))/sd(combat_delta_dmri_rsind_fiberat_allfibers)) #ctrl dwm zscore
+
+### swm
+nd_CTRL_swm_mean <- mean(nd_CTRL$combat_delta_dmri_rsindwm_cdk_mean) #ctrl swm mean
+nd_CTRL_swm_sd <- sd(nd_CTRL$combat_delta_dmri_rsindwm_cdk_mean) #ctrl dwm sd
+
+nd_CTRL <- nd_CTRL %>% 
+  mutate(swm_zscore = (combat_delta_dmri_rsindwm_cdk_mean - mean(combat_delta_dmri_rsindwm_cdk_mean))/sd(combat_delta_dmri_rsindwm_cdk_mean)) #ctrl swm mean
+
+## mTBI
+### dwm
+nd_mTBI <- nd[nd$group=="mTBI",]
+
+nd_mTBI <- nd_mTBI %>% 
+  mutate(dwm_zscore = (combat_delta_dmri_rsind_fiberat_allfibers - nd_CTRL_dwm_mean)/nd_CTRL_dwm_sd) #mtbi dwm zscore based on ctrl mean and sd
+
+nd_mTBI <- nd_mTBI %>% 
+  mutate(swm_zscore = (combat_delta_dmri_rsindwm_cdk_mean - nd_CTRL_swm_mean)/nd_CTRL_swm_sd) #mtbi swm zscore based on ctrl mean and sd
+
+nd_zscores <- rbind(nd_CTRL, nd_mTBI)
+
+```
+
+### Internalizing Behaviour Scores
+
+**AIC**
+
+```{r echo = FALSE, message= FALSE, warning=FALSE}
+lm_int <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore*sex*t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_int2 <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore*sex + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_int3 <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore*t2_interview_age + sex + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_int4 <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore + sex + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+## AIC
+models <- list(lm_int, lm_int2, lm_int3, lm_int4) #define list of models
+mod.names <- c('3-way', 'zscore-sex', 'zscore-age', 'main-effects') #specify model names
+aictab(cand.set = models, modnames = mod.names) #calculate AIC of each model
+```
+
+**Likelihood Ratio Test**
+
+```{r echo = FALSE, message= FALSE, warning=FALSE}
+lrtest(lm_int, lm_int2)
+lrtest(lm_int2, lm_int4)
+
+lrtest(lm_int, lm_int3)
+lrtest(lm_int3, lm_int4)
+```
+
+The best fit model is the one with deviation-by-sex interaction term.
+
+```{r echo = FALSE, message= FALSE, warning=FALSE}
+summary(lm_int2)
+```
+
+```{r echo = FALSE}
+fig3_int <- ggplot(nd_mTBI, aes(x = swm_zscore, y = t2_cbcl_scr_syn_internal_r, colour= sex)) +
+  geom_jitter() +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=sex), show.legend = FALSE) +
+  facet_wrap(~sex, labeller = labeller(sex = c("F" = "Females", "M" = "Males"))) +
+  labs(y = "Internalizing Behaviour Score at Follow-Up", x = "Deviation", colour = "Sex") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) +
+  scale_fill_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) 
+fig3_int 
+
+# ggsave("Figure3.tiff", width= 180, height= 125, units = "mm", device='tiff', dpi=500)
+```
+
+#### Sex-Stratified Analyses
+
+##### Females
+
+```{r echo = FALSE}
+nd_mTBI_f <- nd_mTBI[nd_mTBI$sex == "F",]
+
+lm_int_f <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI_f)
+summary(lm_int_f)
+
+```
+
+```{r echo = FALSE}
+ggplot(nd_mTBI_f, aes(x = swm_zscore, y = t2_cbcl_scr_syn_internal_r, colour= sex)) +
+  geom_jitter(show.legend = FALSE) +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=sex), show.legend = FALSE) +
+  labs(y = "Internalizing Behaviour Score at Follow-Up", x = "Deviation", colour = "Sex") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) +
+  scale_fill_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) 
+
+
+```
+
+##### Males
+
+```{r echo = FALSE}
+nd_mTBI_m <- nd_mTBI[nd_mTBI$sex == "M",]
+
+lm_int_m <- lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI_m)
+summary(lm_int_m)
+
+```
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_int2,
+  lm_int_f,
+  lm_int_m,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Deviation Score",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Baseline Internalizing Behavior Score",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial",
+    "Deviation Score:Sex"
+  ),
+  dv.labels = c("Group Effects",  "Sex-Stratified: Females", "Sex-Stratified: Males"),
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
+
+### Without Outliers
+
+Remove participants with z-scores < -2.5 (n = 3) or > 2.5 (n = 3).
+
+```{r echo=FALSE}
+## remove participants with z-scores < -2.5 or > 2.5 to remove outliers
+nd_mTBI_nooutliers <- nd_mTBI[!(nd_mTBI$swm_zscore < -2.5 | nd_mTBI$swm_zscore > 2.5),]
+
+# check_nums <- nd_mTBI[!(nd_mTBI$swm_zscore < -2.5),] #n = 3 removed
+# check_nums <- nd_mTBI[!(nd_mTBI$swm_zscore >2.5),] #n = 3 removed
+# 6 in total removed
+```
+
+```{r echo = FALSE}
+summary(lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore*sex + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI_nooutliers))
+```
+
+```{r echo=FALSE}
+ggplot(nd_mTBI_nooutliers, aes(x = swm_zscore, y = t2_cbcl_scr_syn_internal_r, colour= sex)) +
+  geom_jitter() +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=sex), show.legend = FALSE) +
+  facet_wrap(~sex) +
+  labs(y = "Internalizing Behaviour Score at Follow-Up", x = "Deviation", colour = "Sex") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) +
+  scale_fill_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) 
+
+```
+
+#### Sex-Stratified Analyses 
+
+##### Females
+
+```{r echo = FALSE}
+nd_mTBI_nooutliers_f <- nd_mTBI_nooutliers[nd_mTBI_nooutliers$sex == "F",]
+summary(lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI_nooutliers_f))
+```
+
+```{r echo=FALSE}
+ggplot(nd_mTBI_nooutliers_f, aes(x = swm_zscore, y = t2_cbcl_scr_syn_internal_r, colour= sex)) +
+  geom_jitter() +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill=sex), show.legend = FALSE) +
+  labs(y = "Internalizing Behaviour Score at Follow-Up", x = "Deviation", colour = "Sex") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12)) +
+  scale_colour_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) +
+  scale_fill_manual(labels = c("Females", "Males"), values = c("#C77CFF", "#619CFF")) 
+
+```
+
+##### Males
+
+```{r echo = FALSE}
+nd_mTBI_nooutliers_m <- nd_mTBI_nooutliers[nd_mTBI_nooutliers$sex == "M",]
+summary(lm(t2_cbcl_scr_syn_internal_r ~ swm_zscore + t2_interview_age + t1_cbcl_scr_syn_internal_r + puberty + comb_income + race_eth, data = nd_mTBI_nooutliers_m))
+```
+
+### Externalizing Behaviour Scores
+
+**AIC**
+
+```{r echo = FALSE, message= FALSE, warning=FALSE}
+lm_ext <- lm(t2_cbcl_scr_syn_external_r ~ swm_zscore*sex*t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_ext2 <- lm(t2_cbcl_scr_syn_external_r ~ swm_zscore*sex + t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_ext3 <- lm(t2_cbcl_scr_syn_external_r ~ swm_zscore*t2_interview_age + sex + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+lm_ext4 <- lm(t2_cbcl_scr_syn_external_r ~ swm_zscore + sex + t2_interview_age + t1_cbcl_scr_syn_external_r + puberty + comb_income + race_eth, data = nd_mTBI)
+
+## AIC
+models_ext <- list(lm_ext, lm_ext2, lm_ext3, lm_ext4) #define list of models
+mod.names_ext <- c('3-way', 'zscore-sex', 'zscore-age', 'main-effects') #specify model names
+aictab(cand.set = models_ext, modnames = mod.names_ext) #calculate AIC of each model
+```
+
+**Likelihood Ratio Test**
+
+```{r echo = FALSE, message= FALSE, warning=FALSE}
+lrtest(lm_ext, lm_ext2)
+lrtest(lm_ext2, lm_ext4)
+
+lrtest(lm_ext, lm_ext3)
+lrtest(lm_ext, lm_ext4)
+```
+
+Best fit model is main effects model.
+
+```{r echo = FALSE}
+summary(lm_ext4)
+```
+
+```{r echo = FALSE}
+ggplot(nd_mTBI, aes(x = swm_zscore, y = t2_cbcl_scr_syn_external_r, colour=group)) +
+  geom_jitter() +
+  geom_smooth(method = "lm",  formula = y ~ x, aes(fill = group), show.legend = FALSE) +
+  labs(y = "Externalizing Behaviour Score at Follow-Up", x = "Deviation") +
+  theme_bw()+
+  theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), 
+        axis.text=element_text(size=12),axis.title=element_text(size=10,face="bold"), strip.text = element_text(size = 12), legend.position = "none") +
+  scale_colour_manual(values = "red") +
+  scale_fill_manual(values = "red") 
+
+
+```
+
+```{r  include = FALSE}
+# full model table
+tab_model(
+  lm_ext4,
+  show.ci = FALSE,
+  pred.labels = c(
+    "Intercept",
+    "Deviation Score",
+    "Sex",
+    "Interview Age at Follow-Up",
+    "Baseline Internalizing Behavior Score",
+    "Puberty",
+    "Combined Family Income - $50-99K",
+    "Combined Family Income - $100K+",
+    "Race - Non-Hispanic Black",
+    "Race - Hispanic",
+    "Race - Asian",
+    "Race - Other/Multi-Racial"
+  ),
+  dv.labels = "",
+  string.pred = " ",
+  string.p = "p-value"
+)
+```
