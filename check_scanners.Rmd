@@ -1,0 +1,65 @@
+---
+title: "Check Scanner Used at Baseline and Follow-Up"
+author: "Eman Nishat"
+date: "Last Updated: `r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo = FALSE}
+libraries <- c("magrittr", "dplyr", "lmerTest", "tidyr", "Hmisc", "table1", "AICcmodavg", "ggpubr")
+lapply(libraries, require, character.only = TRUE)
+
+```
+
+This report checks whether the scanner used at follow-up is the same as the one used a baseline. It then conducts the brain analyses in only those participants that were scanned on the same scanner at follow-up.
+
+# Scanner
+
+Checking if scanner at baseline is same as scanner at follow-up. 
+
+```{r echo = FALSE}
+# baseline scanner data
+scanner_bl <- read.csv('complete_imputed_dataset_noSibs.csv')
+scanner_bl <- scanner_bl[,c(2,6,16)] # n = 5177
+
+## select participants with imaging info
+prepost_ppt <- read.csv('mTBI_CTRL_MRIgrp_RSIinfo.csv') # n = 6276
+scanner_bl <- scanner_bl[scanner_bl$subjectkey %in% prepost_ppt$subjectkey,] # n = 3138
+
+# follow-up scanner data
+scanner_5threl <- read.csv('mri_y_adm_info.csv')
+# table(scanner_5threl$eventname)
+
+## select participants of interest in 5th release
+colnames(scanner_5threl)[1] <- "subjectkey"
+scanner_5threl_sub <- scanner_5threl[scanner_5threl$subjectkey %in% scanner_bl$subjectkey,]
+scanner_2yr <- scanner_5threl_sub[scanner_5threl_sub$eventname == "2_year_follow_up_y_arm_1",]
+scanner_2yr <- scanner_2yr[,c(1,2,6)] #  n = 3134
+colnames(scanner_2yr)[3] <- "scanner_2yr"
+
+scanner_info <- merge(scanner_bl, scanner_2yr[,c(1,3)], by = "subjectkey", all.x = TRUE) # n = 3138
+
+# find which participants hda same scanner at follow-up and which had different 
+scanner_info <- scanner_info %>% 
+  mutate(diff_scanner = case_when(scanner == scanner_2yr ~ "Same",
+                                  TRUE ~ "Different")) # n = 3138
+
+## mTBI
+scanner_info_mTBI <- scanner_info[scanner_info$group == 1,]
+table(scanner_info_mTBI$diff_scanner) # n = 17 mTBI participants with different scanners at baseline and follow-up, 97 with same
+
+## CTRL
+scanner_info_CTRL <- scanner_info[scanner_info$group == 0,]
+table(scanner_info_CTRL$diff_scanner) # n = 509 CTRL participants with different scanners at baseline and follow-up, 2515 with same
+
+# remove participants that had different scanners
+same_scanner <- scanner_info[scanner_info$diff_scanner == "Same",] # n = 2612
+
+write.csv(same_scanner, "mTBI_CTRL_forMRIanalysis.csv")
+```
+
+17 participants with mTBI and 509 CTRL participants were scanned on different scanners at follow-up than they were at baseline.
