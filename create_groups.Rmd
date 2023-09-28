@@ -719,7 +719,7 @@ The following code will extract mTBI participants that have imaging data that pa
 
 ```{r echo = FALSE}
 # load mTBI participants with QC data and RSI info
-qc <- read.csv('/Volumes/awheeler/lab-data/abcd/processed/eman-proj/pre-postinjury-group-analyses/revisions/mTBI_CTRL_brainscan_qcd_rsi.csv') # n = 6250
+qc <- read.csv('mTBI_CTRL_brainscan_qcd_rsi.csv') # n = 6250
 qc <- qc[,-1]
 
 # select mTBI participants only
