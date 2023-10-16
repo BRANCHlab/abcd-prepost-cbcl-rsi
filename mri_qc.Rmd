@@ -14,17 +14,16 @@ libraries <- c("magrittr", "dplyr", "tidyr")
 lapply(libraries, require, character.only = TRUE)
 ```
 
-
-Children from the ABCD Study Release 4.0 that have complete pre- and post-injury CBCL information (after imputation for SES variables) will undergo quality control (QC) in this script. This script checked the following: all participants have QC completed, received a passing scor, had RSI data available, were not diagnosed with any neurological conditions.
+This script checks the following: all participants have QC completed, received a passing score, have restriction spectrum image (RSI) data available, and are not diagnosed with any neurological conditions.
 
 ```{r}
 ## load subject data ##
-df <- read.csv('complete_imputed_dataset_noSibs.csv') #n=5177
+df <- read.csv('complete_imputed_dataset_noSibs.csv') # n = 5177
 df <- df[,-1]
 df$group [df$group==1] <- "mTBI"
 df$group [df$group==0] <- "CTRL"
-mTBI <- df[df$group=="mTBI",-1] #n=196
-CTRL <- df[df$group=="CTRL",-1] #n=4981
+mTBI <- df[df$group=="mTBI",-1] # n = 196
+CTRL <- df[df$group=="CTRL",-1] # n = 4981
 ```
 
 ```{r}
@@ -33,11 +32,11 @@ qc_file <- read.csv('mriqcrp10301.txt')
 qc_file <- qc_file[-1,]
 
 # select mTBI and CTRL participants only
-qc_file_subs <- qc_file[qc_file$subjectkey %in% df$subjectkey, ] #n=9484 ##double since it's both bl and fup
+qc_file_subs <- qc_file[qc_file$subjectkey %in% df$subjectkey, ] # n = 9484 ##double since it's both bl and fup
 # table(qc_file_subs$eventname) ## check to make sure it's only bl and fup image info
 
 # add group info
-qc_file_subs <- merge(df[,c(1,5)], qc_file_subs, by = "subjectkey") #n=9482
+qc_file_subs <- merge(df[,c(1,5)], qc_file_subs, by = "subjectkey") # n = 9482
 qc_file_subs %>% 
   group_by(group) %>% 
   summarise(count = n_distinct(subjectkey))
@@ -49,7 +48,7 @@ Total of 196 mTBI and 4971 CTRL. 10 CTRL with missing info.
 ## qc ##
 qc_file_subs_dups <- qc_file_subs %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=8634
+  filter(n() > 1) # n = 8634
 
 qc_file_subs_dups %>% 
   group_by(group) %>% 
@@ -78,9 +77,9 @@ dwi_qc[,3:20] <- dwi_qc[,3:20] %>%
   mutate_if(is.character, as.numeric)
 
 ## merge t1 and dwi qc
-qc <- merge(t1_qc, dwi_qc, by=c("subjectkey", "eventname")) #n=8634
+qc <- merge(t1_qc, dwi_qc, by=c("subjectkey", "eventname")) # n = 8634
 ## merge group info
-qc <- merge(df[,c(1,5)], qc, by = "subjectkey") #n=8634
+qc <- merge(df[,c(1,5)], qc, by = "subjectkey") #n = 8634
 qc %>% 
   group_by(group) %>% 
   summarise(count = n_distinct(subjectkey))
@@ -95,15 +94,15 @@ From those with baseline and follow-up imaging data, check how many passed T1 qc
 
 ```{r}
 # select participants that have t1 qc1 scores (remove participants with missing qc scores)
-qc_t1_scores <- qc[!is.na(qc$iqc_t1_1_qc_score),] #n=8629
+qc_t1_scores <- qc[!is.na(qc$iqc_t1_1_qc_score),] # n = 8629
 # make sure only participants with bl and fup data remain, since missing t1 file was probably only for one event for a given subject
 qc_t1_scores <- qc_t1_scores %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=8624
+  filter(n() > 1) #n = 8624
 
 qc_t1_scores %>% 
   group_by(group) %>% 
-  summarise(count = n_distinct(subjectkey)) #n = 159 mTBI, 4153 CTRL
+  summarise(count = n_distinct(subjectkey)) # n = 159 mTBI, 4153 CTRL
 
 # select participants that passed t1 qc (had a score of 1)
 qc_t1_pass <- qc_t1_scores[qc_t1_scores$iqc_t1_1_qc_score == 1,]
@@ -113,7 +112,7 @@ qc_t1_pass <- qc_t1_pass %>%
 
 qc_t1_pass %>% 
   group_by(group) %>% 
-  summarise(count = n_distinct(subjectkey)) #b = 4061 CTRL, 154 mTBI
+  summarise(count = n_distinct(subjectkey)) # n = 4061 CTRL, 154 mTBI
 ```
 
 1 mTBI and 4 CTRL participants had missing T1 image info. 5 mTBI failed T1 qc, 92 CTRL failed T1 qc.
@@ -124,15 +123,15 @@ From those that passed T1 qc, check how many passed dMRI qc
 
 ```{r}
 # select participants that have dmri qc1 scores (remove participants with missing qc scores)
-qc_dmri_scores <- qc_t1_pass[!is.na(qc_t1_pass$iqc_dmri_1_qc_score),] #n=8203
+qc_dmri_scores <- qc_t1_pass[!is.na(qc_t1_pass$iqc_dmri_1_qc_score),] # n = 8203
 # make sure only participants with bl and fup data remain, since missing t1 file was probably only for one event for a given subject
 qc_dmri_scores <- qc_dmri_scores %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=8010
+  filter(n() > 1) # n = 8010
 
 qc_dmri_scores %>% 
   group_by(group) %>% 
-  summarise(count = n_distinct(subjectkey)) #n = 144 mTBI, 3861 CTRL
+  summarise(count = n_distinct(subjectkey)) # n = 144 mTBI, 3861 CTRL
 
 # select participants that passed t1 qc (had a score of 1)
 qc_dmri_pass <- qc_dmri_scores[qc_dmri_scores$iqc_dmri_1_qc_score == 1,]
@@ -142,64 +141,55 @@ qc_dmri_pass <- qc_dmri_pass %>%
 
 qc_dmri_pass %>% 
   group_by(group) %>% 
-  summarise(count = n_distinct(subjectkey)) #n = 140 mTBI, 3746 CTRL
+  summarise(count = n_distinct(subjectkey)) # n = 140 mTBI, 3746 CTRL
 
-qcd_subjects <- qc_dmri_pass #n=7772
+qcd_subjects <- qc_dmri_pass # n = 7772
 ```
 
 10 mTBI have missing dMRI image info, 200 CTRL have missing dMRI image info. 4 mTBI failed dMRI qc, 115 CTRL failed dMRI qc.
 
 **RSI**
 
-From the participants that passed T1 and dMRI qc, how many have RSI data available?
-
-The imaging data used below is from ABCD Data Release 3.0. Regions were labeled using automatic segmentation (subcortical grey matter), Desikan-Killiany atlas (subadjacent WM), and AtlasTrack segmentation (deep white matter). 
+From the participants that passed T1 and dMRI qc, how many have RSI data available?  
 
 ```{r echo = FALSE}
-## WM, sub-cortical GM, SWM (sub-adjacent WM)
+## white matter (WM) and superficial white matter (SWM, sub-adjacent WM)
 RSI1 <- read.table('mri_rsi_p102.txt')
 
 rsi1.nd <- select(RSI1, subjectkey, interview_date:sex, eventname, dmri_rsind_fiberat_fxrh:dmri_rsind_fiberat_allfiblh, dmri_rsind_scs_crwmlh:dmri_rsind_scs_vndcrh, dmri_rsindwm_cdk_bsslh:dmri_rsindwm_cdk_mean)
 # write.csv(rsi1.nd, "rsi1_nd.csv")
 
-## cortical GM, GWC
-RSI2 <- read.table('mri_rsi_p202.txt')
-
-rsi2.nd <- select(RSI2, subjectkey, interview_date:sex, eventname, dmri_rsindgm_cdk_bsslh:dmri_rsindgm_cdk_mean, dmri_rsindgwc_cdk_bsslh:dmri_rsindgwc_cdk_mean)
-# write.csv(rsi2.nd, "rsi2_nd.csv")
-
 ```
 
 ```{r}
-## WM, sub-cortical GM, SWM (sub-adjacent WM)
 rsi1_nd <- read.csv("rsi1_nd.csv")
 
-rsi_qcd <- merge(rsi1_nd[,c(2,4:149)], qcd_subjects[,c(1:3)], by = c("subjectkey", "eventname")) #n=7133
+rsi_qcd <- merge(rsi1_nd[,c(2,4:149)], qcd_subjects[,c(1:3)], by = c("subjectkey", "eventname")) # n = 7133
 
 rsi_qcd <- rsi_qcd %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=6502
+  filter(n() > 1) # n = 6502
 
 ## cortical GM, GWC
 rsi2_nd <- read.csv("rsi2_nd.csv")
-rsi_qcd <- merge(rsi2_nd[,c(2,4:148)], rsi_qcd, by = c("subjectkey","eventname","interview_age","sex")) #n=6502
+rsi_qcd <- merge(rsi2_nd[,c(2,4:148)], rsi_qcd, by = c("subjectkey","eventname","interview_age","sex")) # n = 6502
 
 rsi_qcd <- rsi_qcd %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=6502
+  filter(n() > 1) # n = 6502
 
 ## want complete rsi data for mTBI and CTRLs
 rsi_qcd_mTBI <- rsi_qcd[rsi_qcd$group=="mTBI",]
-rsi_qcd_mTBI <- rsi_qcd_mTBI[complete.cases(rsi_qcd_mTBI),] #n=237
+rsi_qcd_mTBI <- rsi_qcd_mTBI[complete.cases(rsi_qcd_mTBI),] # n = 237
 
 rsi_qcd_CTRL <- rsi_qcd[rsi_qcd$group=="CTRL",]
-rsi_qcd_CTRL <- rsi_qcd_CTRL[complete.cases(rsi_qcd_CTRL),] #n=6223
+rsi_qcd_CTRL <- rsi_qcd_CTRL[complete.cases(rsi_qcd_CTRL),] # n = 6223
 
-rsi_qcd_complete <- rbind(rsi_qcd_CTRL, rsi_qcd_mTBI) #n=6460
+rsi_qcd_complete <- rbind(rsi_qcd_CTRL, rsi_qcd_mTBI) # n = 6460
 
 rsi_qcd_complete <- rsi_qcd_complete %>% 
   group_by(subjectkey) %>% 
-  filter(n() > 1) #n=6420
+  filter(n() > 1) # n = 6420
 
 rsi_qcd_complete %>% 
   group_by(group) %>% 
@@ -207,17 +197,17 @@ rsi_qcd_complete %>%
 
 #########
 
-#check only one bl and one fup value
+# check only one bl and one fup value
 rsi_qcd_complete_bl <- rsi_qcd_complete[rsi_qcd_complete$eventname == "baseline_year_1_arm_1",]
 rsi_qcd_complete_bl <- rsi_qcd_complete_bl[!duplicated(rsi_qcd_complete_bl$subjectkey),]
 rsi_qcd_complete_fup <- rsi_qcd_complete[rsi_qcd_complete$eventname == "2_year_follow_up_y_arm_1",]
 rsi_qcd_complete_fup <- rsi_qcd_complete_fup[!duplicated(rsi_qcd_complete_fup$subjectkey),]
 
-rsi_qcd_complete <- rbind(rsi_qcd_complete_bl, rsi_qcd_complete_fup) #n=6420
+rsi_qcd_complete <- rbind(rsi_qcd_complete_bl, rsi_qcd_complete_fup) # n = 6420
 
 rsi_qcd_complete <- rsi_qcd_complete %>% 
   group_by(subjectkey) %>% 
-  filter(n() == 2) #n=6420
+  filter(n() == 2) # n = 6420
 
 rsi_qcd_complete %>% 
   group_by(group) %>% 
@@ -232,19 +222,19 @@ rsi_qcd_complete %>%
 rsi_missing <- qcd_subjects[!(qcd_subjects$subjectkey %in% rsi_qcd_complete$subjectkey), c(1,2)]
 rsi_missing %>% 
   group_by(group) %>% 
-  summarise(count = n_distinct(subjectkey)) #n=1352
+  summarise(count = n_distinct(subjectkey)) # n = 1352
 
-rsi_missing_nd1 <- rsi1_nd[rsi1_nd$subjectkey %in% rsi_missing$subjectkey, c(2,4:149)] #n=713
-rsi_missing_nd2 <- rsi2_nd[rsi2_nd$subjectkey %in% rsi_missing$subjectkey, c(2,4:148)] #n=713
+rsi_missing_nd1 <- rsi1_nd[rsi1_nd$subjectkey %in% rsi_missing$subjectkey, c(2,4:149)] # n = 713
+rsi_missing_nd2 <- rsi2_nd[rsi2_nd$subjectkey %in% rsi_missing$subjectkey, c(2,4:148)] # n = 713
 
 rsi_missing_nd <- merge(rsi_missing_nd1, rsi_missing_nd2, by = c("subjectkey", "interview_age", "sex", "eventname"), all.x=TRUE)
-length(unique(rsi_missing_nd$subjectkey)) #672 - 680 have missing data
+length(unique(rsi_missing_nd$subjectkey)) # n = 672 - 680 have missing data
 rsi_missing_nd_dups <- rsi_missing_nd %>% 
   group_by(subjectkey) %>% 
-  filter(n() == 2) #41 unique - these participants removed because they have missing data for one of the timepoints
+  filter(n() == 2) # n = 41 unique - these participants removed because they have missing data for one of the timepoints
 rsi_missing_nd_sings <- rsi_missing_nd %>% 
   group_by(subjectkey) %>% 
-  filter(n() < 2) #631 - these participants removed because they don't have data for one of the timepoints
+  filter(n() < 2) # n = 631 - these participants removed because they don't have data for one of the timepoints
 
 # ## save
 # write.csv(rsi_missing, "CTRL_mTBI_withoutMRI.csv")
@@ -254,11 +244,11 @@ rsi_missing_nd_sings <- rsi_missing_nd %>%
 
 **QC for Epilepsy, Lead Poisoning, Cerebral Palsy, Multiple Sclerosis**
 
-```{r med history qc, include = FALSE}
-#ABCD Parent Medical History Questionnaire
+```{r include = FALSE}
+# ABCD Parent Medical History Questionnaire
 medhist <- read.csv('abcd_mx01.txt')
 medhist <- medhist[-1,]
-medhist_qcd_bl <- merge(rsi_qcd_complete[rsi_qcd_complete$eventname=="baseline_year_1_arm_1", c(1,290)], medhist, by="subjectkey") #n=3210
+medhist_qcd_bl <- merge(rsi_qcd_complete[rsi_qcd_complete$eventname=="baseline_year_1_arm_1", c(1,290)], medhist, by="subjectkey") # n = 3210
 
 ## create new column with numeric value of how many with epilepsy
 medhist_qcd_bl$epilepsy <- (as.numeric(as.character(medhist_qcd_bl$medhx_2h)))
