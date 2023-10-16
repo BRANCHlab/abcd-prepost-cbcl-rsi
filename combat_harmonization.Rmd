@@ -1,7 +1,7 @@
 ---
 title: "NeuroComBat on Change Scores of Neurite Density"
 author: "Eman Nishat"
-date: "2023-09-12"
+date: "Last Updated: `r Sys.Date()`"
 output: 
   html_document:
     toc: true
@@ -18,7 +18,6 @@ knitr::opts_chunk$set(echo = TRUE)
 libraries <- c("dplyr", "tidyr", "ggplot2", "magrittr", "neuroCombat", "lme4", "lmerTest", "AICcmodavg", "lmtest")
 lapply(libraries, require, character.only=T)
 ```
-
 
 # neuroComBat on Change Scores
 
@@ -109,7 +108,7 @@ ses_cbcl$comb_income [ses_cbcl$comb_income %in% 7:8] <- 2 #50k-99k
 ses_cbcl$comb_income [ses_cbcl$comb_income %in% 9:10] <- 3 #100k+
 ses_cbcl$comb_income <- sapply(ses_cbcl$comb_income, as.character)
 
-### race/ethnicity: 1 = Non-Hispanic White; 2 = Non-Hispanic Black; 3 = Hispanic; 4 = Asian (Asian Indian, Chinese, Fillipino, Japanese, Korean, Vietnamese, Other Asian); 5 = AIAN (American Indian/Native American, Alaska Native); 6 = NHPI (Native Hawaiian, Guamanian, Samoan, Other Pacific Islander), 8 = Other; 9 = Multiple
+### race/ethnicity: 1 = Non-Hispanic White; 2 = Non-Hispanic Black; 3 = Hispanic; 4 = Asian (Asian Indian, Chinese, Filipino, Japanese, Korean, Vietnamese, Other Asian); 5 = AIAN (American Indian/Native American, Alaska Native); 6 = NHPI (Native Hawaiian, Guamanian, Samoan, Other Pacific Islander), 8 = Other; 9 = Multiple
 ses_cbcl$race_eth [ses_cbcl$race_eth %in% 1] <- "NHW" #non-hispanic white
 ses_cbcl$race_eth [ses_cbcl$race_eth %in% 2] <- "NHB" #non-hispanic black
 ses_cbcl$race_eth [ses_cbcl$race_eth %in% 3] <- "Hispanic" 
@@ -179,8 +178,8 @@ nd_change_combat_df <- cbind(nd_change[,1], nd_change_combat_df)
 colnames(nd_change_combat_df)[1] <- "subjectkey"
 
 # Select variables of interest in neuroCombat harmonized data
-# grep("dmri_rsind_fiberat_allfibers", colnames(nd_change_combat_df))
-# grep("dmri_rsindwm_cdk_mean", colnames(nd_change_combat_df))
+## grep("dmri_rsind_fiberat_allfibers", colnames(nd_change_combat_df)) 
+## grep("dmri_rsindwm_cdk_mean", colnames(nd_change_combat_df))
 nd_neuroCombat_delta <- nd_change_combat_df[,c(1,181,286)]
 ## add combat to name
 names(nd_neuroCombat_delta)[c(2,3)]  <- paste("combat_delta", names(nd_neuroCombat_delta)[c(2,3)], sep = "_")
@@ -190,7 +189,7 @@ nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_change_ses, by = "subject
 
 ```{r}
 # run combat on baseline values
-# mod - include all t1 variables
+## mod - include all t1 variables
 mod_matrix_bl <-
   model.matrix(
     ~ group + sex + t1_interview_age + puberty + comb_income + race_eth +
@@ -241,7 +240,7 @@ nd_neuroCombat_delta <- merge(nd_neuroCombat_delta, nd_fup_roi, by = "subjectkey
 
 ```{r}
 # run combat on follow-up values
-# mod - include all t2 variables
+## mod - include all t2 variables
 mod_matrix_fup <-
   model.matrix(
     ~ group + sex + t2_interview_age + puberty + comb_income + race_eth +
