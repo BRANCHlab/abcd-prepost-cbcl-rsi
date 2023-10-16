@@ -10,9 +10,9 @@ output:
     number_sections: true
 ---
 
-This report includes the final analyses that are included in the manuscript. This includes models comparing follow-up Child Behaviour Checklist (CBCL) scores between children with concussion (or mild traumatic brain injury, mTBI) and the comparison groups (CTRL). Each analysis compares two different sub-scales between groups: internalizing behaviour scores and externalizing behaviour scores.
+This report includes the final analyses that are included in the manuscript. This includes models comparing follow-up Child Behaviour Checklist (CBCL) scores between children with concussion (or mild traumatic brain injury, mTBI) and the comparison groups (CTRL). Each analysis compares two different sub-scales between groups: internalizing behaviour scores and externalizing behaviour scores. Model selection was confirmed using the likelihood ratio test (LRT).
 
-Four different models were set-up and selected using the Akaike Information Criterion (AIC): (1) three-way interactions between group, sex, and age; (2) two-way interaction between group and sex; (3) two-way interaction between group and age; (4) main effects. Final models were followed by sex-stratified analyses to determine any differences in males and females.
+Four different models were set-up and selected using the Akaike Information Criterion (AIC): (1) three-way interactions between group, sex, and age; (2) two-way interaction between group and sex; (3) two-way interaction between group and age; (4) main effects. Significant interaction terms were followed by stratified analyses to determine any differences.
 
 ```{r include=FALSE}
 ## load libraries

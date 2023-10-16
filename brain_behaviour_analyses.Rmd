@@ -35,7 +35,7 @@ nd$comb_income <- sapply(nd$comb_income, as.character)
 
 This report includes analyses comparing post-injury neurite density of deep white matter and superficial white matter between children with concussion (or mild traumatic brain injury, mTBI) and the comparison group (CTRL).
 
-For all analyses, four models were generated: three-way interactions between group/sex/age, two-way interactions between group/sex, two-way interactions between group/age, and main effects. AIC was used to select the best-fit model. Final models were followed by sex-stratified aalyses to determine any differences in males and females.
+For all analyses, four models were generated: three-way interactions between group/sex/age, two-way interactions between group/sex, two-way interactions between group/age, and main effects. AIC was used to select the best-fit model. Model selection was confirmed using the likelihood ratio test (LRT). Significant interaction terms were followed by stratified analyses to determine any differences.
 
 Models include socioeconomic (SES) variables including household income and race/ethnicity, and puberty as fixed effects and scanner as a random effect.
 
