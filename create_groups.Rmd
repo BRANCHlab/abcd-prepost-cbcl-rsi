@@ -5,7 +5,7 @@ date: "Last Updated: `r Sys.Date()`"
 output: html_document
 ---
 
-This script generates the concussion group with baseline and follow-up data, that experienced a concussion after study entry, and comparison group with no history of head or neck injuries.
+This script generates the concussion group with baseline and follow-up data, that experienced a concussion after study entry, and comparison group with baseline and follow-up data, with no history of head or neck injuries.
 
 ```{r, echo=FALSE, include=FALSE}
 # libraries
@@ -531,7 +531,8 @@ table(mtbi_inj_cbcl$eventname)
 ```
 
 ```{r include=FALSE}
-# write.csv(mtbi_inj_cbcl, "mTBI_CBCLgrp_injInfo_sept7.csv")
+# # Save to use in ses_imputation.Rmd
+# write.csv(mtbi_inj_cbcl, "mTBI_CBCLgrp_injInfo.csv")
 ```
 
 # CTRL
@@ -588,7 +589,7 @@ CTRL_2yr <- CTRL[!(CTRL$eventname == "1_year_follow_up_y_arm_1" | CTRL$eventname
 
 
 ```{r echo = FALSE}
-# write.csv(CTRL_2yr, "ctrl_subjectkey_at2yrfollowup_sept7.csv")
+# write.csv(CTRL_2yr, "ctrl_subjectkey_at2yrfollowup.csv")
 
 ```
 
@@ -643,8 +644,6 @@ label(CTRL_cbcl_fup$cbcl_scr_syn_totprob_t) <- "Follow-Up Total Problem Behaviou
 
 ## check for completeness for internalizing, externalizing, and total problem scores
 table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r + cbcl_scr_syn_internal_t + cbcl_scr_syn_external_t + cbcl_scr_syn_totprob_t | sex, data = CTRL_cbcl_fup, rowlabelhead = "Follow-Up CBCL Scores", footnote = "A higher score reflects parent’s report of greater presence and severity of symptoms in the child or youth. A t-score ≤ 59 indicates non-clinical symptoms, a t-score between 60 and 64 indicates that the child is at risk for problem behaviors, and a t-score ≥ 65 indicates clinical symptoms")
-
-# 1693 with missing CBCL info at follow-up
 ```
 
 1693 participants with missing data at follow-up
@@ -701,12 +700,10 @@ missing_cbcl_CTRL$group <- "CTRL"
 ## merge CTRL and mTBI participants with missing CBCL
 missing_cbcl_mTBI_CTRL <- rbind(missing_cbcl_CTRL, missing_cbcl_mTBI)
 
-## save
-# write.csv(missing_cbcl_mTBI_CTRL, "CTRL_mTBI_withoutCBCL.csv")
-
 ```
 
 ```{r include=FALSE}
+# # Save to use in ses_imputation.Rmd
 # write.csv(cbcl_CTRL, "CTRL_CBCLgrp_CBCLinfo.csv")
 
 ```
@@ -715,7 +712,7 @@ missing_cbcl_mTBI_CTRL <- rbind(missing_cbcl_CTRL, missing_cbcl_mTBI)
 
 ## mTBI
 
-The following code will extract mTBI participants that have imaging data that passed QC (as completed in image_qc.Rmd).
+The following code will extract mTBI participants that have imaging data that passed QC (as completed in mri_qc.Rmd).
 
 ```{r echo = FALSE}
 # load mTBI participants with QC data and RSI info
@@ -726,7 +723,7 @@ qc <- qc[,-1]
 mTBI_rsi <- qc[qc$group=="mTBI",] # n = 228
 mTBI_rsi <- mTBI_rsi[mTBI_rsi$subjectkey %in% mtbi_inj_cbcl$subjectkey,] # n = 228
 
-## check who has both baseline and follow-up data -- should be 2 rows for each participant because there is 1 baseline and 1 FUP scans for each participant (WM/sub-cortical GM/SWM (sub-adjacent WM) and cortical GM/GWC)
+## check who has both baseline and follow-up data -- should be 2 rows for each participant because there is 1 baseline and 1 FUP scan for each participant 
 mTBI_rsi_prepost <- mTBI_rsi %>%
   group_by(subjectkey) %>%
   filter(n()==2) # n = 228
@@ -812,6 +809,7 @@ mTBI_rsi_prepost_fin <- mTBI_rsi_prepost[mTBI_rsi_prepost$subjectkey %in% mTBI_i
 
 rsi_prepost <- rbind(mTBI_rsi_prepost_fin, CTRL_rsi_prepost)
 
+# # Save
 # write.csv(rsi_prepost, "mTBI_CTRL_MRIgrp_RSIinfo.csv")
 ```
 
