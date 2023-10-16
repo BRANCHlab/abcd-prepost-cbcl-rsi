@@ -6,13 +6,14 @@ This repository contains scripts used to preprocess and analyze data used in the
 
 This script was used to extract the concussion and comparison groups with baseline and follow-up behaviour and MRI information. To continue script from line 714, the output from _mri_qc.Rmd_ is needed.
 
-**2. mri_qc_Rmd**
+**2. ses_imputation.Rmd**
+
+For the participants extracted from the script above, until line 714, this script checks for missing data in the following variables: sex, pubertal status, total combined family income, highest parental education, ethnicity, scanner, and medications including anticonvulsants, antipsychotics, stimulants, and antidepressants.
+
+**3. mri_qc_Rmd**
 
 This script is the imaging data quality control (QC). It checks if participants have completed QC, received a passing score, have restriction spectrum image (RSI) data available, and are not diagnosed with any neurological conditions. The output from this script is used to complete group extraction in _create_groups.Rmd_.
 
-**3. ses_imputation.Rmd**
-
-For the participants extracted from the scripts above, this script checks for missing data in the following variables: sex, pubertal status, total combined family income, highest parental education, ethnicity, scanner, and medications including anticonvulsants, antipsychotics, stimulants, and antidepressants.
 
 **4. behaviour_analyses.Rmd**
 
