@@ -11,25 +11,25 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r libraries, include=FALSE}
 #load packages
-libraries <- c("dplyr", "tidyr", "magrittr", "MatchIt", "table1", "mice", "ggplot2", "kableExtra", "gridExtra", "naniar", "VIM")
+libraries <- c("dplyr", "tidyr", "magrittr", "table1", "mice", "ggplot2", "kableExtra", "gridExtra", "naniar", "VIM")
 lapply(libraries, require, character.only=TRUE)
 ```
 
 ## MERGED DATASET  
 
-Combining all the variables that we will be matching on into one data table. The variables are: Sex, Pubertal Status, Total Combined Family Income, Highest Parental Education, Ethnicity, Scanner, and Medications including Anticonvulsants, Antipsychotics, Stimulants, and Antidepressants, and Pre-injury CBCL scores. Participants will be matched on baseline data. 
+Combining all the variables of interest (variables that will be controlled for in statistical models) into one data table. The variables are: Sex, Pubertal Status, Total Combined Family Income, Highest Parental Education, Ethnicity, Scanner, and Medications including Anticonvulsants, Antipsychotics, Stimulants, and Antidepressants, and Pre-injury CBCL scores. Statistical models will control for baseline values of these variables.
 
-```{r TBI dataset, echo=FALSE}
+```{r echo=FALSE}
 ## Load mTBI group
 mTBI <- read.csv("mTBI_CBCLgrp_injInfo.csv") # n = 196
 # remove all variables except subjectkeykey, id, eventname, sex, interview_age
 mTBI <- mTBI[,c(2,7,8,10,11)]
-# add group varible
+# add group variable
 mTBI$group <- 1 
 
 ## Load CTRL group
 CTRL <- read.csv("CTRL_CBCLgrp_CBCLinfo.csv") # n = 11470
-CTRL <- CTRL[CTRL$eventname=="2_year_follow_up_y_arm_1",] #n = 5735
+CTRL <- CTRL[CTRL$eventname=="2_year_follow_up_y_arm_1",] # n = 5735
 # remove all variables except subjectkeykey, id, eventname, sex, interview_age
 CTRL <- CTRL[,c(5,6,8,9,10)]
 # add group varible
@@ -39,15 +39,14 @@ df <- rbind(mTBI, CTRL) # n = 5931
 colnames(df)[3] <- "age_at_followup"
 ```
 
-**Pubertal Status**
+### Pubertal Status
 
 Pubertal Status information was obtained from the Physical Health measure completed by Parents. This measure had fewer missing values than the youth measure.
 
-```{r puberty, echo=FALSE}
-#abcd_ssphy01 - Sum Score Physical Health by Parents
-## Parent measure has fewer missing values than youth measure
+```{r echo=FALSE}
+# abcd_ssphy01 - Sum Score Physical Health by Parents (parent measure has fewer missing values than youth measure)
 med_hist <- read.csv('abcd_ssphp01.txt')
-med_hist <- subset(med_hist, eventname== 'baseline_year_1_arm_1') #want to match on preinjury/baseline data
+med_hist <- subset(med_hist, eventname== 'baseline_year_1_arm_1')
 
 puberty <- merge(df, med_hist[,c(4,5,6,8,31,34)], by=c('subjectkey', 'src_subject_id', 'sex'), all.x = T)
 
@@ -68,19 +67,19 @@ table1(~ puberty + interview_age | group, data= puberty, rowlabelhead='Puberty -
 
 174 (4 mTBI, 170 CTRL) with missing information on pubertal status and 2 (CTRL) with missing information on interview age.
 
-**Parental Income**
+### Parental Income
 
 Parent Income was calculated as the Total Combined Family Income as reported on the Parent Demographics Survey. 
 
-```{r income, echo=FALSE}
-#pdem02.txt - Parent Demographics Survey
+```{r echo=FALSE}
+# pdem02.txt - Parent Demographics Survey
 demo <- read.csv('pdem02.txt')
 demo <- demo[-1,]
 demo <- subset(demo, eventname== 'baseline_year_1_arm_1')
 
 demo <- merge(df_puberty, demo, by=c('subjectkey', 'src_subject_id', 'sex', 'interview_age'), all.x = T)
 
-#replace 999 and 777 in income variable with NA
+# replace 999 and 777 in income variable with NA
 demo <- demo %>%
   replace_with_na(replace = list(demo_comb_income_v2 = c(999, 777))) %>% 
   replace_with_na(replace = list(demo_comb_income_v2 = c(999, 777)))
@@ -103,17 +102,17 @@ table1(~demo_comb_income_v2| group, data = demo, rowlabelhead = "Total Combined 
 
 481 (12 mTBI, 469 CTRL) participants with missing family income information.
 
-**Parental Education**
+### Parental Education
 
 Parental Education was also obtained from the Parent Demographics Survey, and was calculated as the Highest Grade/Level of School Completed amongst both parents.
 
-```{r education, echo=FALSE}
-#replace 999 and 777 in education variables with NA
+```{r echo=FALSE}
+# replace 999 and 777 in education variables with NA
 demo <- demo %>%
   replace_with_na(replace = list(demo_prnt_ed_v2 = c(999, 777))) %>% 
   replace_with_na(replace = list(demo_prtnr_ed_v2 = c(999, 777)))
 
-#create new column for info on highest edu obtained by parents
+# create new column for info on highest edu obtained by parents
 demo$highest_parental_edu <- ""
 
 demo <- within(demo, { 
@@ -135,11 +134,11 @@ table1(~highest_parental_edu| group, data = df_demo, rowlabelhead = "Highest Par
 
 48 (1 mTBI, 47 CTRL) participants have missing parental education information.
 
-**Handedness**
+### Handedness
 
 Information on handedness was obtained from the Youth Edinburgh Handedness Inventory Short Form.
 
-```{r handedness, echo=FALSE}
+```{r echo=FALSE}
 #abcd_ehis01.txt - Youth Edinburgh Handedness Inventory Short Form (EHIS)
 hand <- read.csv('abcd_ehis01.txt')
 hand <- subset(hand, eventname== 'baseline_year_1_arm_1')
@@ -156,11 +155,12 @@ colnames(df_hand)[9] <- "handedness"
 
 2 CTRL participants with missing info on handedness.
 
-**Ethnicity**
+### Ethnicity
 
 Information on ethnicity was obtained from the Parent Demographics Survey. 
 
-```{r ethnicity, echo=FALSE}
+```{r echo=FALSE}
+# race and ethnicity categorized based on this script: https://github.com/ABCD-STUDY/abcd_acs_raked_propensity/blob/master/ABCDPropWeight_V1_R.R
 ethnicity <- read.csv('ABCD_RaceEthnicity_GitHub.csv')
 ethnicity <- ethnicity[,c(2,6,9,19)]
 
@@ -176,17 +176,18 @@ table1(~race_eth | group, data = df_ethnicity, rowlabelhead = "Race Distribution
 
 33 participants (3 mTBI, 30 CTRL) with missing ethnicity information.
 
-**Medication**
+### Medication
 
 Includes children that have taken the following medications in the last two weeks: anticonvulsants, antipsychotics, stimulants, and/or antidepressants.
 
-```{r med, echo=FALSE}
+```{r echo=FALSE}
+# medication history cleaned up in another script
 med <- read.csv('ABCD_MedRx.csv')
 med <- med[,-c(1,3)]
 
 med[,2:16] <- sapply(med[,2:16], as.character)
 
-## select meds we're matching on
+## select meds of interest
 df_med <- merge(df_ethnicity, med[,c(1:3,4,15)], by='subjectkey', all.x = T)
 
 df_med$antipsychotics [df_med$antipsychotics==2] <- 1
@@ -197,12 +198,12 @@ table1(~anticonvulsants + antipsychotics + stimulants + antidepressants| group, 
 
 ```
 
-**Scanner**
+### Scanner
 
 Scanner serial number.
 
-```{r scanner, echo=FALSE}
-#abcd_ehis01.txt - Youth Edinburgh Handedness Inventory Short Form (EHIS)
+```{r echo=FALSE}
+# abcd_ehis01.txt - Youth Edinburgh Handedness Inventory Short Form (EHIS)
 scanner <- read.csv('abcd_mri01.txt')
 scanner <- scanner[-1,]
 scanner <- subset(scanner, eventname== 'baseline_year_1_arm_1')
@@ -216,55 +217,51 @@ colnames(df_scanner)[15] <- "scanner"
 
 51 participants (1 mTBI, 50 CTRL) with missing scanner info.
 
-**Pre-Injury CBCL Scores**
+### Pre-Injury CBCL Scores
 
 Baseline CBCL scores.
 
-```{r baseline cbcl scores, echo = FALSE}
+```{r echo = FALSE}
 cbcl <- read.csv("cbclscores_baseline.csv")
 cbcl <- cbcl[,-1]
 
-## select variables we're matching on -- raw internalizing, externalizing, and total problem behaviour scores
+## select variables we're comparing -- raw internalizing, externalizing, and total problem behaviour scores
 df_cbcl <- merge(df_scanner, cbcl[,c(4,42,46,50)], by='subjectkey', all.x = T)
 
 table1(~cbcl_scr_syn_internal_r + cbcl_scr_syn_external_r + cbcl_scr_syn_totprob_r| group, data = df_cbcl, rowlabelhead = "CBCL Baseline Scores", overall = "Total")
 ```
 
-**Merged Dataset**
+### Merged Datase
 
-The above variables were all merged to create one dataframe, including all CTRL and TBI participants and all variables that the matching will occur on.
+The above variables were all merged to create one dataframe, including all CTRL and mTBI participants and all variables that are being controlled for in statistical models.
 
-```{r merged, echo=FALSE}
-# dataset with variables we're matching on, with all participants
-df_vars <- df_cbcl #n = 5931
+```{r echo=FALSE}
+# dataset with variables we're controlling for, with all participants
+df_vars <- df_cbcl # n = 5931
 
 ```
 
 -----
 
-```{r, include=FALSE}
-#number of participants with more than 2 missing values
-df_na <- df_vars[rowSums(is.na(df_vars)) > 2,] #n = 9
+```{r include=FALSE}
+# number of participants with more than 2 missing values
+df_na <- df_vars[rowSums(is.na(df_vars)) > 2,] # n = 9
 
-# #how many mTBI and CTRL?
-# table(df_na$group) # no mTBI so remove all 9 with more than two missing variables bc we want to have enough info to impute missing variables
+# # How many mTBI and CTRL?
+# table(df_na$group) # no mTBI so remove all 9 with more than two missing variables because we want to have enough info to impute missing variables
 
 # final dataset to impute
-df_fin <- df_vars[!(rowSums(is.na(df_vars)) > 2),] #n=5922
-
-write.csv(df_fin, "variables_to_match_on.csv")
+df_fin <- df_vars[!(rowSums(is.na(df_vars)) > 2),] # n = 5922
 
 ```
 
 ## IMPUTATION
 
-Want to interpolate missing values to avoid futher deletion of participants. Will use MICE package.
+Want to interpolate missing values to avoid further deletion of participants. Will use MICE package.
 
-References: https://datascienceplus.com/imputing-missing-data-with-r-mice-package/; https://stats.idre.ucla.edu/r/faq/how-do-i-perform-multiple-imputation-using-predictive-mean-matching-in-r/; https://www.jstatsoft.org/article/view/v045i03
+### Assessing the Missing Values
 
-**Assessing the Missing Values**
-
-```{r missing values, echo=FALSE}
+```{r echo=FALSE}
 df_factor <- df_fin
 #best to keep categorical variables as factor (Buuren & Groothuis-Oudshoorn, 2011)
 df_factor[,-c(4,16:18)] %<>% 
@@ -278,7 +275,7 @@ apply(df_factor, 2, pMiss)
 
 Combined family income has the most missing data points at 7.97% missing.
 
-```{r NA count, echo=FALSE, results='hide'}
+```{r echo=FALSE, results='hide'}
 #make a variable that counts how many values are missing across all variables
 df_factor$missing <- rowSums(apply(is.na(df_factor), 2, as.numeric)) 
 # sum(df_factor$missing) #758
@@ -286,7 +283,7 @@ df_factor$missing <- rowSums(apply(is.na(df_factor), 2, as.numeric))
 
 In total, `r sum(df_factor$missing)` data points are missing across the following participants:
 
-```{r NA count table, echo=FALSE}
+```{r echo=FALSE}
 #missing data table
 df_factor_missing <- df_factor[df_factor$missing >= 1, c('subjectkey', 'group')]
 #pipe into pretty table
@@ -304,22 +301,22 @@ aggr_plot <- aggr(df_factor, col=c('navyblue','red'), numbers=TRUE, sortVars=TRU
 df_factor <- df_factor[,-19]
 ```
 
-**Imputing Missing Data**
+### Imputing Missing Data
 
 The `m=5` argument specifies the number of imputed datasets (default). The `maxit=10` argument specifies the number of iterations (default). The imputation method can be specified using the `meth` argument, however in this code the default will be selected based on the variable type. 'pmm', predictive mean matching, is used for numeric variables and 'polyreg', polytomous regression imputation, is used for unordered categorical data (factor > 2 levels). `seed` sets a random seed for reprodicibility.
 
-```{r imputation, results = 'hide', cache=TRUE, warning=FALSE, message = FALSE}
+```{r results = 'hide', cache=TRUE, warning=FALSE, message = FALSE}
 #don't want to include subject ids as predictors for imputation -- this is probably wants slowing down the imputation as well
 df_factor_sub <- subset(df_factor, select = c(sex:cbcl_scr_syn_totprob_r))
 #m = 5 and maxit = 10 are default settings
 imputed <- mice(df_factor_sub, m = 5, maxit = 10, nnet.MaxNWts = 29110, seed = 900)
 ```
 
-
-**Inspecting Distribution of Original and Imputed Data**
+### Inspecting Distribution of Original and Imputed Data
 
 Variables that had missing information and were imputed were puberty, combined family income, highest parental education, race and ethnicity, and scanner.
-```{r density plots, echo = FALSE}
+
+```{r echo = FALSE}
 #density plot  per variable, per imputation of original vs imputed dataset
 p1 <- densityplot(imputed, ~puberty, xlab = "Pubertal Status")
 p2 <- densityplot(imputed, ~comb_income, xlab = "Total Combined Family Income")
@@ -331,50 +328,45 @@ grid.arrange(p1,p2,p3,p4,p5,nrow = 2)
 
 ```
 
-
 The density of the imputed data for each imputed dataset is shown in magenta while the density of the observed data is shown in blue. The overall trend of distribution is consistent between observed and imputed data.
 
-**Closer Look at the Imputations for Each Variable**
+**Closer Look at the Imputations for Each Variable: Density Plots of Individual Imputation**
 
-## Density Plots of Individual Imputation {.tabset}
-
-### Pubertal Status
+Pubertal Status:
 
 ```{r echo=FALSE}
 densityplot(imputed, ~puberty | .imp, xlab = "Pubertal Status")
 ```
 
-### Total Combined Family Income
+Total Combined Family Income:
 
 ```{r echo=FALSE}
 densityplot(imputed, ~comb_income | .imp, xlab = "Total Combined Family Income")
 ```
 
-### Highest Parental Education
+Highest Parental Education:
 
 ```{r echo=FALSE}
 densityplot(imputed, ~highest_parental_edu | .imp, xlab = "Highest Parental Education") #1,4
 ```
 
-### Ethnicity
+Ethnicity:
 
 ```{r echo=FALSE}
 densityplot(imputed, ~race_eth | .imp, xlab = "Ethnicity") #1-3
 ```
 
-### Scanner
+Scanner:
 
 ```{r echo=FALSE}
 densityplot(imputed, ~scanner | .imp, xlab = "Scanner") #1
 ```
 
-##
+Using the _complete_ function we will created a completed dataset.
 
-Using the _complete_ function we will created a completed dataset to run _matchIt_.
-
-```{r, include=FALSE}
+```{r include=FALSE}
 #imputing values using the default dataset out of the five
-com <- complete(imputed) #n=5922
+com <- complete(imputed) # n = 5922
 ## add subject id columns to dataset
 com <- cbind(df_factor[,c(1:2)], com)
 #check number of NA after imputation
@@ -388,10 +380,10 @@ apply(com, 2, pMiss)
 
 ## QUALITY CONTROL 
 
-Since this matched control group is for the purpose of the group comparisons of behaviour, we will not QC for brain scans and diagnosis of Epilepsy, Lead Poisoning, Multiple Sclerosis, Cerebral Palsy. We will QC for siblings. 
+QC for siblings. 
 
-```{r remove TBI twins, include =FALSE}
-#acspsw03.txt - acs_PostStratification_Weight
+```{r include =FALSE}
+# acspsw03.txt - acs_PostStratification_Weight
 ## Siblings = A combination of having the same rel_family_id as another person & rel_relationship (1)
 ## Twins = A combination of having the same rel_family_id as another person & rel_relationship (2)
 ## Triplets = A combination of having the same rel_family_id as another person & rel_relationship (3)
@@ -402,29 +394,29 @@ acs <- subset(acs, eventname=="baseline_year_1_arm_1")
 acs <- acs[,c(4,11,14)]
 
 acs <- merge(com, acs, by='subjectkey', all.x = T)
-acs_ctrl <- acs[acs$group==0,] #n = 5726
-acs_mtbi <- acs[acs$group==1,] #n = 196
+acs_ctrl <- acs[acs$group==0,] # n = 5726
+acs_mtbi <- acs[acs$group==1,] # n = 196
 
-#creating function to leave only one twin/triplet//siblings in sample
+# creating function to leave only one twin/triplet//siblings in sample
 findsets <- function(acs, rel_relationship) {
   findsets <- acs[c(acs$rel_relationship==rel_relationship & !duplicated(acs$rel_family_id)),]
 }
 
-#removing siblings from mTBI sample by only keeping those that do not have any siblings in sample
-twin_mtbi <- findsets(acs_mtbi,2) #n=31
-triplet_mtbi <- findsets(acs_mtbi,3) #n=0
-sibling_mtbi <- findsets(acs_mtbi,1) #n=21
-singleton_mtbi <- findsets(acs_mtbi,0) #n=144
-total_mtbi <- rbind(twin_mtbi, triplet_mtbi, sibling_mtbi, singleton_mtbi) #n = 196 so no siblings in mTBI sample
+# removing siblings from mTBI sample by only keeping those that do not have any siblings in sample
+twin_mtbi <- findsets(acs_mtbi,2) # n = 31
+triplet_mtbi <- findsets(acs_mtbi,3) # n = 0
+sibling_mtbi <- findsets(acs_mtbi,1) # n = 21
+singleton_mtbi <- findsets(acs_mtbi,0) # n = 144
+total_mtbi <- rbind(twin_mtbi, triplet_mtbi, sibling_mtbi, singleton_mtbi) # n = 196 so no siblings in mTBI sample
 
-#removing sibling from CTRL sample
-twin_ctrl <- findsets(acs_ctrl,2) #n=711
-triplet_ctrl <- findsets(acs_ctrl,3) #n=7
-sibling_ctrl <- findsets(acs_ctrl,1) #n=522
-singleton_ctrl <- findsets(acs_ctrl,0) #n=3741
-total_ctrl <- rbind(twin_ctrl, triplet_ctrl, sibling_ctrl, singleton_ctrl) #n = 4981 (745 siblings in the sample)
+# removing sibling from CTRL sample
+twin_ctrl <- findsets(acs_ctrl,2) # n = 711
+triplet_ctrl <- findsets(acs_ctrl,3) # n = 7
+sibling_ctrl <- findsets(acs_ctrl,1) # n = 522
+singleton_ctrl <- findsets(acs_ctrl,0) # n = 3741
+total_ctrl <- rbind(twin_ctrl, triplet_ctrl, sibling_ctrl, singleton_ctrl) # n = 4981 (745 siblings in the sample)
 
-#combing TBI and CTRL
+# combing mTBI and CTRL
 total <- rbind(total_mtbi, total_ctrl)
 
 df <- total[,-c(19,20)]
@@ -433,9 +425,9 @@ row.names(df) <- NULL
 #sapply(df, function(x) sum(is.na(x)))
 ```
 
-**Final Dataset to Match On After Removing Siblings/Twins/Triplets**
+**Final Dataset After Removing Siblings/Twins/Triplets**
 
-```{r, echo =FALSE}
+```{r echo =FALSE}
 dim(df)
 
 # table(df$group==1) # TRUE = mTBI
