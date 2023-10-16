@@ -15,7 +15,7 @@ lapply(libraries, require, character.only = TRUE)
 
 ```
 
-This report checks whether the scanner used at follow-up is the same as the one used a baseline. It then conducts the brain analyses in only those participants that were scanned on the same scanner at follow-up.
+This report checks whether the scanner used at follow-up is the same as the one used a baseline. 
 
 # Scanner
 
